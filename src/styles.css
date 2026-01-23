@@ -1,0 +1,207 @@
+:root {
+  --bg: #ffffff;
+  --text: #0f172a;
+  --muted: #334155;
+  --border: #e2e8f0;
+  --primary: #0f172a;
+  --primaryText: #ffffff;
+  --soft: #f1f5f9;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Century Gothic", CenturyGothic, AppleGothic, sans-serif;
+}
+
+a,
+button,
+input,
+textarea,
+select {
+  font-family: inherit;
+}
+
+.container {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 16px;
+}
+
+.card {
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  padding: 18px;
+  background: #fff;
+  box-shadow: 0 1px 6px rgba(15, 23, 42, 0.06);
+}
+
+.row {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+label {
+  font-size: 16px;
+  color: var(--muted);
+  display: block;
+  margin-bottom: 6px;
+}
+
+input,
+textarea,
+select {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 14px 14px;
+  font-size: 18px;
+  outline: none;
+  background: white;
+}
+
+textarea {
+  min-height: 160px;
+}
+
+input:focus,
+textarea:focus,
+select:focus,
+button:focus {
+  outline: 3px solid rgba(15, 23, 42, 0.25);
+  outline-offset: 2px;
+}
+
+.btn {
+  height: 56px; /* big touch target */
+  padding: 0 18px;
+  font-size: 18px; /* readable */
+  border-radius: 18px;
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+
+.btnPrimary {
+  background: var(--primary);
+  color: var(--primaryText);
+}
+
+.btnPrimary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btnSecondary {
+  background: var(--soft);
+  color: var(--text);
+  border-color: var(--border);
+}
+
+.badge {
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: var(--soft);
+  border: 1px solid var(--border);
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.header {
+  border-bottom: 1px solid var(--border);
+  padding: 14px 0;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.logo {
+  width: 56px;
+  height: 56px;
+  border-radius: 18px;
+  border: 1px solid var(--border);
+  object-fit: contain;
+  background: white;
+}
+
+.h1 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.h2 {
+  margin: 0;
+  font-size: 16px;
+  color: var(--muted);
+}
+
+.small {
+  font-size: 14px;
+  color: var(--muted);
+}
+
+hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 16px 0;
+}
+
+.tabs {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+}
+
+.tab {
+  height: 48px;
+  padding: 0 16px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: white;
+  cursor: pointer;
+  font-size: 16px;
+}
+
+.tabActive {
+  background: var(--primary);
+  color: white;
+  border-color: var(--primary);
+}
+
+/* Splash screen - Option B */
+.splash {
+  position: fixed;
+  inset: 0;
+  background: white;
+  display: grid;
+  place-items: center;
+  z-index: 99;
+}
+
+.splashInner {
+  text-align: center;
+  padding: 22px;
+}
+
+.splashLogo {
+  width: 120px;
+  height: 120px;
+  object-fit: contain;
+  border-radius: 28px;
+  border: 1px solid var(--border);
+  background: white;
+  margin-bottom: 14px;
+}

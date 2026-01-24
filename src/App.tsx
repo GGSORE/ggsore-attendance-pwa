@@ -163,6 +163,8 @@ export default function App() {
 
   // Auth (local UI; becomes real when Supabase keys are set)
   const [authed, setAuthed] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
@@ -289,6 +291,8 @@ export default function App() {
     }
 
     setAuthed(true);
+    setIsAdmin(ADMIN_EMAILS.includes(email.trim().toLowerCase()));
+
     setStatus("Logged in.");
   }
 
@@ -307,6 +311,8 @@ export default function App() {
     }
 
     setAuthed(true);
+    setIsAdmin(ADMIN_EMAILS.includes(email.trim().toLowerCase()));
+
     setStatus("Account created.");
   }
 

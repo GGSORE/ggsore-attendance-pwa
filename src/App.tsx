@@ -4,11 +4,24 @@ import QRCode from "qrcode";
 
 const BRAND = {
   schoolName: "The Guillory Group School of Real Estate",
-  logo: "/logo.png" // we’ll upload this into /public as logo.png
+  logo: "/logo.png" // /public/logo.png
 };
 
 // ===== ADMIN ACCESS CONTROL =====
 const ADMIN_EMAILS = ["michicaguillory@outlook.com"];
+
+// ===== TREC LICENSE FORMAT =====
+// Numeric portion: 6 or 7 digits (leading zero allowed)
+// Suffix: -SA, -B, or -BB (required)
+// Examples: 123456-SA, 0123456-B, 1000001-BB
+function normalizeLicense(raw: string) {
+  return raw.trim().toUpperCase().replace(/\s+/g, "");
+}
+
+function isValidLicense(raw: string) {
+  const v = normalizeLicense(raw);
+  return /^\d{6,7}-(SA|B|BB)$/.test(v);
+}
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
@@ -29,15 +42,15 @@ type Session = {
 };
 
 type RosterRow = {
-  email: string;
+  trec_license: string; // normalized
   first_name?: string;
   last_name?: string;
-  license_no?: string;
+  notes?: string;
 };
 
 type Attendance = {
   session_id: string;
-  email: string;
+  trec_license: string; // normalized
   checkin_at?: string;
   checkout_at?: string;
   method_checkin?: "scan" | "manual";
@@ -68,6 +81,9 @@ function fromLocalInputValue(v: string) {
   return new Date(v).toISOString();
 }
 
+// Expect CSV headers like:
+// trec_license,first_name,last_name,notes
+// or "license" / "trec" variants – we’ll try to detect.
 function csvToRoster(text: string): RosterRow[] {
   const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
   if (lines.length < 2) return [];
@@ -77,24 +93,33 @@ function csvToRoster(text: string): RosterRow[] {
     .map(h => h.trim().toLowerCase().replace(/\s+/g, "_"));
 
   const idx = (name: string) => headers.indexOf(name);
-  const iEmail = idx("email");
+
+  const iLic =
+    idx("trec_license") >= 0 ? idx("trec_license")
+    : idx("license") >= 0 ? idx("license")
+    : idx("license_no") >= 0 ? idx("license_no")
+    : idx("trec") >= 0 ? idx("trec")
+    : -1;
+
   const iFirst = idx("first_name");
   const iLast = idx("last_name");
-  const iLic = idx("license_no");
+  const iNotes = idx("notes");
 
   return lines
     .slice(1)
     .map(row => {
       const cols = row.split(",").map(c => c.trim());
-      const email = (cols[iEmail] || "").toLowerCase();
+      const raw = iLic >= 0 ? (cols[iLic] || "") : "";
+      const trec_license = normalizeLicense(raw);
+
       return {
-        email,
+        trec_license,
         first_name: iFirst >= 0 ? cols[iFirst] : undefined,
         last_name: iLast >= 0 ? cols[iLast] : undefined,
-        license_no: iLic >= 0 ? cols[iLic] : undefined
+        notes: iNotes >= 0 ? cols[iNotes] : undefined
       };
     })
-    .filter(r => r.email.includes("@"));
+    .filter(r => isValidLicense(r.trec_license));
 }
 
 function downloadText(filename: string, text: string) {
@@ -112,7 +137,7 @@ function downloadText(filename: string, text: string) {
 function toCSV(records: Attendance[]) {
   const header = [
     "session_id",
-    "email",
+    "trec_license",
     "checkin_at",
     "checkout_at",
     "method_checkin",
@@ -123,7 +148,7 @@ function toCSV(records: Attendance[]) {
   const rows = records.map(r =>
     [
       r.session_id,
-      r.email,
+      r.trec_license,
       r.checkin_at || "",
       r.checkout_at || "",
       r.method_checkin || "",
@@ -136,7 +161,7 @@ function toCSV(records: Attendance[]) {
 }
 
 // QR payload is static but includes an expiration window.
-// (In production we can sign this payload, but this MVP proves the workflow.)
+// (Later we can sign this payload. MVP proves workflow.)
 function qrPayload(
   action: "checkin" | "checkout",
   sessionId: string,
@@ -151,7 +176,7 @@ function isExpired(expiresAt: string) {
 }
 
 export default function App() {
-  // Splash Screen (Option B: splash + header branding)
+  // Splash Screen (Option B)
   const [showSplash, setShowSplash] = useState(true);
   useEffect(() => {
     const t = setTimeout(() => setShowSplash(false), 1100);
@@ -161,12 +186,16 @@ export default function App() {
   // Tabs
   const [tab, setTab] = useState<"student" | "admin">("student");
 
-  // Auth (local UI; becomes real when Supabase keys are set)
+  // Auth
   const [authed, setAuthed] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
 
+  // Students sign in with email/password, but identity for attendance is LICENSE NUMBER.
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+
+  // Required for account creation + login (A)
+  const [licenseInput, setLicenseInput] = useState("");
 
   const [status, setStatus] = useState<string>("");
 
@@ -178,8 +207,8 @@ export default function App() {
   const [checkinQrUrl, setCheckinQrUrl] = useState("");
   const [checkoutQrUrl, setCheckoutQrUrl] = useState("");
 
-  // Roster + Attendance (local MVP persistence)
-  const [rosterCSV, setRosterCSV] = useState("email,first_name,last_name,license_no\n");
+  // Roster + Attendance (local persistence for now; next phase is DB tables)
+  const [rosterCSV, setRosterCSV] = useState("trec_license,first_name,last_name,notes\n");
   const [roster, setRoster] = useState<RosterRow[]>([]);
   const [attendance, setAttendance] = useState<Attendance[]>([]);
 
@@ -190,7 +219,7 @@ export default function App() {
 
   // Load/save locally (works even before Supabase)
   useEffect(() => {
-    const raw = localStorage.getItem("ggsore_attendance_pwa_v1");
+    const raw = localStorage.getItem("ggsore_attendance_pwa_v2");
     if (!raw) return;
     try {
       const p = JSON.parse(raw);
@@ -203,7 +232,7 @@ export default function App() {
 
   useEffect(() => {
     localStorage.setItem(
-      "ggsore_attendance_pwa_v1",
+      "ggsore_attendance_pwa_v2",
       JSON.stringify({ sessions, activeSessionId, roster, attendance })
     );
   }, [sessions, activeSessionId, roster, attendance]);
@@ -277,10 +306,21 @@ export default function App() {
     })();
   }, [activeSession]);
 
+  function setAdminFromEmail(e: string) {
+    const norm = e.trim().toLowerCase();
+    setIsAdmin(ADMIN_EMAILS.map(x => x.toLowerCase()).includes(norm));
+  }
+
   async function login() {
     setStatus("");
+
     if (!email.trim()) return setStatus("Enter an email.");
     if (!password.trim()) return setStatus("Enter a password.");
+
+    const lic = normalizeLicense(licenseInput);
+    if (!isValidLicense(lic)) {
+      return setStatus("Enter full TREC license number like 123456-SA (suffix required: -SA, -B, or -BB).");
+    }
 
     if (supabase) {
       const { error } = await supabase.auth.signInWithPassword({
@@ -288,37 +328,48 @@ export default function App() {
         password: password.trim()
       });
       if (error) return setStatus(error.message);
+
+      // Store/refresh license in metadata on login (keeps it consistent)
+      await supabase.auth.updateUser({
+        data: { trec_license: lic }
+      });
     }
 
     setAuthed(true);
-    setIsAdmin(ADMIN_EMAILS.includes(email.trim().toLowerCase()));
-
+    setAdminFromEmail(email);
     setStatus("Logged in.");
   }
 
   async function createAccount() {
     setStatus("");
+
     if (!email.trim()) return setStatus("Enter an email.");
     if (!password.trim() || password.trim().length < 8)
       return setStatus("Use a password with at least 8 characters.");
 
+    const lic = normalizeLicense(licenseInput);
+    if (!isValidLicense(lic)) {
+      return setStatus("Enter full TREC license number like 123456-SA (suffix required: -SA, -B, or -BB).");
+    }
+
     if (supabase) {
       const { error } = await supabase.auth.signUp({
         email: email.trim().toLowerCase(),
-        password: password.trim()
+        password: password.trim(),
+        options: { data: { trec_license: lic } }
       });
       if (error) return setStatus(error.message);
     }
 
     setAuthed(true);
-    setIsAdmin(ADMIN_EMAILS.includes(email.trim().toLowerCase()));
-
+    setAdminFromEmail(email);
     setStatus("Account created.");
   }
 
   async function logout() {
     if (supabase) await supabase.auth.signOut();
     setAuthed(false);
+    setIsAdmin(false);
     setPassword("");
     setStatus("Logged out.");
   }
@@ -326,18 +377,19 @@ export default function App() {
   function importRoster() {
     const r = csvToRoster(rosterCSV);
     setRoster(r);
-    setStatus(`Roster loaded: ${r.length} student(s).`);
+    setStatus(`Roster loaded: ${r.length} student(s) with valid TREC license format.`);
   }
 
-  function rosterContains(emailToCheck: string) {
-    return roster.some(r => r.email.toLowerCase() === emailToCheck.toLowerCase());
+  function rosterContains(licenseRaw: string) {
+    const lic = normalizeLicense(licenseRaw);
+    return roster.some(r => r.trec_license === lic);
   }
 
-  function upsertAttendance(sessionId: string, studentEmail: string): { rec: Attendance; idx: number } {
-    const e = studentEmail.toLowerCase();
-    const idx = attendance.findIndex(a => a.session_id === sessionId && a.email === e);
+  function upsertAttendance(sessionId: string, trec_license_raw: string) {
+    const trec_license = normalizeLicense(trec_license_raw);
+    const idx = attendance.findIndex(a => a.session_id === sessionId && a.trec_license === trec_license);
     if (idx >= 0) return { rec: attendance[idx], idx };
-    const rec: Attendance = { session_id: sessionId, email: e };
+    const rec: Attendance = { session_id: sessionId, trec_license };
     const next = [...attendance, rec];
     setAttendance(next);
     return { rec, idx: next.length - 1 };
@@ -349,17 +401,25 @@ export default function App() {
     setAttendance(next);
   }
 
-  function submitScan(method: "scan" | "manual", actionOverride?: "checkin" | "checkout", emailOverride?: string) {
+  function submitScan(
+    method: "scan" | "manual",
+    actionOverride?: "checkin" | "checkout",
+    licenseOverride?: string
+  ) {
     setStatus("");
     if (!activeSession) return setStatus("No active session selected.");
-    const studentEmail = (emailOverride || email).trim().toLowerCase();
-    if (!studentEmail.includes("@")) return setStatus("Enter a valid email.");
 
-    if (method === "scan" && !authed) return setStatus("Please log in first.");
+    const studentLicense = normalizeLicense(licenseOverride || licenseInput);
+    if (!isValidLicense(studentLicense)) {
+      return setStatus("Enter full TREC license number like 123456-SA (suffix required: -SA, -B, or -BB).");
+    }
 
-    // Students scanning must be registered; admin manual override can bypass roster.
-    if (method === "scan" && !rosterContains(studentEmail)) {
-      return setStatus("Not on the roster for this session. (Admin can manually override.)");
+    // Students scanning must be registered; admin manual override can bypass roster if needed.
+    if (method === "scan") {
+      if (!authed) return setStatus("Please log in first.");
+      if (!rosterContains(studentLicense)) {
+        return setStatus("That TREC license number is not on the paid roster for this class session.");
+      }
     }
 
     let payload: any = null;
@@ -367,7 +427,7 @@ export default function App() {
       try {
         payload = JSON.parse(scanText);
       } catch {
-        return setStatus("Invalid QR data. If your phone can’t scan, paste the QR text.");
+        return setStatus("Invalid QR data. If scanning fails, paste the QR token text.");
       }
     }
 
@@ -387,7 +447,7 @@ export default function App() {
       if (action === "checkout" && code !== activeSession.checkoutCode) return setStatus("Invalid check-out code.");
     }
 
-    const { rec, idx } = upsertAttendance(activeSession.id, studentEmail);
+    const { rec, idx } = upsertAttendance(activeSession.id, studentLicense);
 
     if (action === "checkin") {
       if (rec.checkin_at) return setStatus(`Already checked in (${new Date(rec.checkin_at).toLocaleTimeString()}).`);
@@ -407,7 +467,7 @@ export default function App() {
     setStatus("Unknown action.");
   }
 
-  // Optional camera scan support (works on many browsers but not all)
+  // Optional camera scan support
   async function startCamera() {
     setStatus("");
     try {
@@ -421,7 +481,7 @@ export default function App() {
       }
       setCameraOn(true);
     } catch {
-      setStatus("Camera blocked/unavailable. Use token paste instead.");
+      setStatus("Camera blocked/unavailable. Paste the QR token text instead.");
     }
   }
 
@@ -526,24 +586,23 @@ export default function App() {
           <div className="card" style={{ marginBottom: 14 }}>
             <b>Supabase not connected yet.</b>
             <div className="small" style={{ marginTop: 6 }}>
-              Add <b>VITE_SUPABASE_URL</b> and <b>VITE_SUPABASE_ANON_KEY</b> when we deploy to Vercel.
-              For now, the app runs locally in the browser using saved device storage.
+              Add <b>VITE_SUPABASE_URL</b> and <b>VITE_SUPABASE_ANON_KEY</b> in Vercel.
+              For now, the app runs locally using saved device storage.
             </div>
           </div>
         )}
 
-       <div className="tabs" role="tablist" aria-label="App sections">
-  <button className={`tab ${tab === "student" ? "tabActive" : ""}`} onClick={() => setTab("student")}>
-    Student
-  </button>
+        <div className="tabs" role="tablist" aria-label="App sections">
+          <button className={`tab ${tab === "student" ? "tabActive" : ""}`} onClick={() => setTab("student")}>
+            Student
+          </button>
 
-  {isAdmin && (
-    <button className={`tab ${tab === "admin" ? "tabActive" : ""}`} onClick={() => setTab("admin")}>
-      Admin/Instructor
-    </button>
-  )}
-</div>
-
+          {isAdmin && (
+            <button className={`tab ${tab === "admin" ? "tabActive" : ""}`} onClick={() => setTab("admin")}>
+              Admin/Instructor
+            </button>
+          )}
+        </div>
 
         <hr />
 
@@ -589,7 +648,8 @@ export default function App() {
             <div className="card" style={{ marginBottom: 14 }}>
               <b style={{ fontSize: 18 }}>Student Login</b>
               <div className="small" style={{ marginTop: 6 }}>
-                Students create an account for the school, then scan the class QR codes to check in and check out.
+                Required: full TREC license number including suffix <b>-SA</b>, <b>-B</b>, or <b>-BB</b>.
+                Example: <b>123456-SA</b>
               </div>
 
               <div className="row" style={{ marginTop: 14 }}>
@@ -601,6 +661,19 @@ export default function App() {
                 <div style={{ flex: 1, minWidth: 260 }}>
                   <label>Password</label>
                   <input value={password} onChange={(e) => setPassword(e.target.value)} type="password" placeholder="At least 8 characters" />
+                </div>
+              </div>
+
+              <div style={{ marginTop: 12 }}>
+                <label>TREC License Number</label>
+                <input
+                  value={licenseInput}
+                  onChange={(e) => setLicenseInput(e.target.value)}
+                  placeholder="123456-SA"
+                  inputMode="text"
+                />
+                <div className="small" style={{ marginTop: 6 }}>
+                  The numeric portion may be 6 or 7 digits. Suffix must be SA, B, or BB.
                 </div>
               </div>
 
@@ -619,7 +692,7 @@ export default function App() {
             <div className="card">
               <b style={{ fontSize: 18 }}>Check-In / Check-Out</b>
               <div className="small" style={{ marginTop: 6 }}>
-                Scan the QR code shown in class. If scanning isn’t supported on your phone, paste the QR text and tap Submit Scan.
+                Scan the QR code shown in class. If scanning isn’t supported, paste the QR token text and tap Submit Scan.
               </div>
 
               <div className="row" style={{ marginTop: 14 }}>
@@ -639,7 +712,7 @@ export default function App() {
 
               <div style={{ marginTop: 12 }}>
                 <label>QR Token</label>
-                <textarea value={scanText} onChange={(e) => setScanText(e.target.value)} placeholder="Paste QR text here if needed…" />
+                <textarea value={scanText} onChange={(e) => setScanText(e.target.value)} placeholder="Paste QR token text here if needed…" />
               </div>
 
               <div className="row" style={{ marginTop: 12 }}>
@@ -654,7 +727,7 @@ export default function App() {
             <div className="card" style={{ marginBottom: 14 }}>
               <b style={{ fontSize: 18 }}>Create a Session (Admin)</b>
               <div className="small" style={{ marginTop: 6 }}>
-                This generates today’s Check-In and Check-Out codes. Codes are static but time-boxed by expiration.
+                Generates Check-In and Check-Out codes. Codes are static but time-boxed by expiration.
               </div>
 
               <div style={{ marginTop: 12 }}>
@@ -736,10 +809,10 @@ export default function App() {
             </div>
 
             <div className="card" style={{ marginBottom: 14 }}>
-              <b style={{ fontSize: 18 }}>Roster Import (Excel → CSV)</b>
+              <b style={{ fontSize: 18 }}>Paid Roster Import (Excel → CSV)</b>
               <div className="small" style={{ marginTop: 6 }}>
-                Excel: File → Save As → CSV, then paste here using headers:
-                <b> email, first_name, last_name, license_no</b>
+                Paste a CSV with a TREC license column. Header examples: <b>trec_license</b> or <b>license</b>.
+                Format must be like <b>123456-SA</b>.
               </div>
 
               <div style={{ marginTop: 12 }}>
@@ -756,21 +829,25 @@ export default function App() {
             <div className="card" style={{ marginBottom: 14 }}>
               <b style={{ fontSize: 18 }}>Manual Overrides (Phone Trouble)</b>
               <div className="small" style={{ marginTop: 6 }}>
-                Enter a student email and record check-in or check-out manually.
+                Enter a TREC license number and record check-in or check-out manually.
               </div>
 
               <div className="row" style={{ marginTop: 12 }}>
                 <div style={{ flex: 1, minWidth: 260 }}>
-                  <label>Student Email</label>
-                  <input placeholder="name@email.com" value={scanText} onChange={(e) => setScanText(e.target.value)} />
+                  <label>TREC License Number</label>
+                  <input
+                    placeholder="123456-SA"
+                    value={licenseInput}
+                    onChange={(e) => setLicenseInput(e.target.value)}
+                  />
                 </div>
               </div>
 
               <div className="row" style={{ marginTop: 12 }}>
-                <button className="btn btnSecondary" onClick={() => submitScan("manual", "checkin", scanText)}>
+                <button className="btn btnSecondary" onClick={() => submitScan("manual", "checkin", licenseInput)}>
                   Manual Check-In
                 </button>
-                <button className="btn btnSecondary" onClick={() => submitScan("manual", "checkout", scanText)}>
+                <button className="btn btnSecondary" onClick={() => submitScan("manual", "checkout", licenseInput)}>
                   Manual Check-Out
                 </button>
               </div>

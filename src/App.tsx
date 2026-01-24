@@ -532,14 +532,18 @@ export default function App() {
           </div>
         )}
 
-        <div className="tabs" role="tablist" aria-label="App sections">
-          <button className={`tab ${tab === "student" ? "tabActive" : ""}`} onClick={() => setTab("student")}>
-            Student
-          </button>
-          <button className={`tab ${tab === "admin" ? "tabActive" : ""}`} onClick={() => setTab("admin")}>
-            Admin/Instructor
-          </button>
-        </div>
+       <div className="tabs" role="tablist" aria-label="App sections">
+  <button className={`tab ${tab === "student" ? "tabActive" : ""}`} onClick={() => setTab("student")}>
+    Student
+  </button>
+
+  {isAdmin && (
+    <button className={`tab ${tab === "admin" ? "tabActive" : ""}`} onClick={() => setTab("admin")}>
+      Admin/Instructor
+    </button>
+  )}
+</div>
+
 
         <hr />
 

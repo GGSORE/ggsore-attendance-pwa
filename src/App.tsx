@@ -7,6 +7,9 @@ const BRAND = {
   logo: "/logo.png" // we’ll upload this into /public as logo.png
 };
 
+// ===== ADMIN ACCESS CONTROL =====
+const ADMIN_EMAILS = ["michicaguillory@outlook.com"];
+
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
 

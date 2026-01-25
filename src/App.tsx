@@ -4,7 +4,7 @@ import QRCode from "qrcode";
 
 const BRAND = {
   schoolName: "The Guillory Group School of Real Estate",
-  logo: "/logo.png" // /public/logo.png
+  logo: "/logo.png",
 };
 
 // ===== ADMIN ACCESS CONTROL =====
@@ -17,7 +17,6 @@ const ADMIN_EMAILS = ["michicaguillory@outlook.com"];
 function normalizeLicense(raw: string) {
   return raw.trim().toUpperCase().replace(/\s+/g, "");
 }
-
 function isValidLicense(raw: string) {
   const v = normalizeLicense(raw);
   return /^\d{6,7}-(SA|B|BB)$/.test(v);
@@ -26,7 +25,6 @@ function isValidLicense(raw: string) {
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
 
-// App runs in local MVP mode until Supabase keys are present (no crashing).
 const supabase =
   supabaseUrl && supabaseAnonKey ? createClient(supabaseUrl, supabaseAnonKey) : null;
 
@@ -85,12 +83,12 @@ function fromLocalInputValue(v: string) {
 // trec_license,first_name,last_name,notes
 // or "license" / "trec" variants – we’ll try to detect.
 function csvToRoster(text: string): RosterRow[] {
-  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   if (lines.length < 2) return [];
 
   const headers = lines[0]
     .split(",")
-    .map(h => h.trim().toLowerCase().replace(/\s+/g, "_"));
+    .map((h) => h.trim().toLowerCase().replace(/\s+/g, "_"));
 
   const idx = (name: string) => headers.indexOf(name);
 
@@ -107,8 +105,8 @@ function csvToRoster(text: string): RosterRow[] {
 
   return lines
     .slice(1)
-    .map(row => {
-      const cols = row.split(",").map(c => c.trim());
+    .map((row) => {
+      const cols = row.split(",").map((c) => c.trim());
       const raw = iLic >= 0 ? (cols[iLic] || "") : "";
       const trec_license = normalizeLicense(raw);
 
@@ -116,10 +114,10 @@ function csvToRoster(text: string): RosterRow[] {
         trec_license,
         first_name: iFirst >= 0 ? cols[iFirst] : undefined,
         last_name: iLast >= 0 ? cols[iLast] : undefined,
-        notes: iNotes >= 0 ? cols[iNotes] : undefined
+        notes: iNotes >= 0 ? cols[iNotes] : undefined,
       };
     })
-    .filter(r => isValidLicense(r.trec_license));
+    .filter((r) => isValidLicense(r.trec_license));
 }
 
 function downloadText(filename: string, text: string) {
@@ -142,10 +140,10 @@ function toCSV(records: Attendance[]) {
     "checkout_at",
     "method_checkin",
     "method_checkout",
-    "notes"
+    "notes",
   ].join(",");
 
-  const rows = records.map(r =>
+  const rows = records.map((r) =>
     [
       r.session_id,
       r.trec_license,
@@ -153,7 +151,7 @@ function toCSV(records: Attendance[]) {
       r.checkout_at || "",
       r.method_checkin || "",
       r.method_checkout || "",
-      (r.notes || "").replace(/\n/g, " ").replace(/,/g, " ")
+      (r.notes || "").replace(/\n/g, " ").replace(/,/g, " "),
     ].join(",")
   );
 
@@ -176,7 +174,7 @@ function isExpired(expiresAt: string) {
 }
 
 export default function App() {
-  // Splash Screen (Option B)
+  // Splash Screen
   const [showSplash, setShowSplash] = useState(true);
   useEffect(() => {
     const t = setTimeout(() => setShowSplash(false), 1100);
@@ -190,12 +188,17 @@ export default function App() {
   const [authed, setAuthed] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
 
-  // Students sign in with email/password, but identity for attendance is LICENSE NUMBER.
+  // Login fields
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
-  // Required for account creation + login (A)
+  // License is REQUIRED (account + login + attendance)
   const [licenseInput, setLicenseInput] = useState("");
+
+  // Password recovery
+  const [recoveryMode, setRecoveryMode] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [newPassword2, setNewPassword2] = useState("");
 
   const [status, setStatus] = useState<string>("");
 
@@ -207,7 +210,7 @@ export default function App() {
   const [checkinQrUrl, setCheckinQrUrl] = useState("");
   const [checkoutQrUrl, setCheckoutQrUrl] = useState("");
 
-  // Roster + Attendance (local persistence for now; next phase is DB tables)
+  // Roster + Attendance (local persistence for now)
   const [rosterCSV, setRosterCSV] = useState("trec_license,first_name,last_name,notes\n");
   const [roster, setRoster] = useState<RosterRow[]>([]);
   const [attendance, setAttendance] = useState<Attendance[]>([]);
@@ -217,7 +220,141 @@ export default function App() {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [cameraOn, setCameraOn] = useState(false);
 
-  // Load/save locally (works even before Supabase)
+  function setAdminFromEmail(e: string) {
+    const norm = e.trim().toLowerCase();
+    setIsAdmin(ADMIN_EMAILS.map((x) => x.toLowerCase()).includes(norm));
+  }
+
+  async function loadSessionFromSupabase() {
+    if (!supabase) return;
+    const { data } = await supabase.auth.getSession();
+    const session = data.session;
+    if (!session?.user) return;
+
+    const u = session.user;
+    setAuthed(true);
+    setEmail(u.email || "");
+    setAdminFromEmail(u.email || "");
+
+    const lic = (u.user_metadata?.trec_license as string | undefined) || "";
+    if (lic) setLicenseInput(normalizeLicense(lic));
+  }
+
+  // Detect recovery link (Supabase uses URL hash)
+  useEffect(() => {
+    const hash = window.location.hash || "";
+    const qs = new URLSearchParams(hash.startsWith("#") ? hash.slice(1) : hash);
+    const type = qs.get("type");
+    if (type === "recovery") {
+      setRecoveryMode(true);
+      setStatus("Create a new password below.");
+    }
+    // Also restore existing login session (stay logged in)
+    loadSessionFromSupabase();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function ensureLicenseSavedToProfile(licRaw: string) {
+    if (!supabase) return;
+    const lic = normalizeLicense(licRaw);
+    if (!isValidLicense(lic)) return;
+    await supabase.auth.updateUser({ data: { trec_license: lic } });
+  }
+
+  async function login() {
+    setStatus("");
+
+    if (!email.trim()) return setStatus("Enter an email.");
+    if (!password.trim()) return setStatus("Enter a password.");
+
+    const lic = normalizeLicense(licenseInput);
+    if (!isValidLicense(lic)) {
+      return setStatus(
+        "Enter full TREC license number like 123456-SA (suffix required: -SA, -B, or -BB)."
+      );
+    }
+
+    if (supabase) {
+      const { error } = await supabase.auth.signInWithPassword({
+        email: email.trim().toLowerCase(),
+        password: password.trim(),
+      });
+      if (error) return setStatus(error.message);
+
+      await ensureLicenseSavedToProfile(lic);
+    }
+
+    setAuthed(true);
+    setAdminFromEmail(email);
+    setStatus("Logged in.");
+  }
+
+  async function createAccount() {
+    setStatus("");
+
+    if (!email.trim()) return setStatus("Enter an email.");
+    if (!password.trim() || password.trim().length < 8)
+      return setStatus("Use a password with at least 8 characters.");
+
+    const lic = normalizeLicense(licenseInput);
+    if (!isValidLicense(lic)) {
+      return setStatus(
+        "Enter full TREC license number like 123456-SA (suffix required: -SA, -B, or -BB)."
+      );
+    }
+
+    if (supabase) {
+      const { error } = await supabase.auth.signUp({
+        email: email.trim().toLowerCase(),
+        password: password.trim(),
+        options: { data: { trec_license: lic } },
+      });
+      if (error) return setStatus(error.message);
+    }
+
+    setAuthed(true);
+    setAdminFromEmail(email);
+    setStatus("Account created.");
+  }
+
+  async function logout() {
+    if (supabase) await supabase.auth.signOut();
+    setAuthed(false);
+    setIsAdmin(false);
+    setPassword("");
+    setStatus("Logged out.");
+  }
+
+  async function forgotPassword() {
+    setStatus("");
+    if (!supabase) return setStatus("Supabase is not connected.");
+    const e = email.trim().toLowerCase();
+    if (!e) return setStatus("Enter your email first, then tap Forgot password.");
+
+    const { error } = await supabase.auth.resetPasswordForEmail(e, {
+      redirectTo: window.location.origin,
+    });
+    if (error) return setStatus(error.message);
+
+    setStatus("Password reset email sent. Open it on this same device to set a new password.");
+  }
+
+  async function setPasswordFromRecovery() {
+    setStatus("");
+    if (!supabase) return setStatus("Supabase is not connected.");
+    if (!newPassword || newPassword.length < 8) return setStatus("New password must be at least 8 characters.");
+    if (newPassword !== newPassword2) return setStatus("Passwords do not match.");
+
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    if (error) return setStatus(error.message);
+
+    setRecoveryMode(false);
+    setNewPassword("");
+    setNewPassword2("");
+    setStatus("Password updated. Please log in.");
+  }
+
+  // Load/save locally (roster + attendance + sessions)
   useEffect(() => {
     const raw = localStorage.getItem("ggsore_attendance_pwa_v2");
     if (!raw) return;
@@ -255,7 +392,7 @@ export default function App() {
       checkinExpiresAt: checkinExp.toISOString(),
       checkoutExpiresAt: checkoutExp.toISOString(),
       checkinCode: randCode(),
-      checkoutCode: randCode()
+      checkoutCode: randCode(),
     };
 
     setSessions([s]);
@@ -263,7 +400,7 @@ export default function App() {
   }, [sessions.length]);
 
   const activeSession = useMemo(
-    () => sessions.find(s => s.id === activeSessionId) || null,
+    () => sessions.find((s) => s.id === activeSessionId) || null,
     [sessions, activeSessionId]
   );
 
@@ -275,104 +412,17 @@ export default function App() {
         setCheckoutQrUrl("");
         return;
       }
-      const c1 = qrPayload(
-        "checkin",
-        activeSession.id,
-        activeSession.checkinCode,
-        activeSession.checkinExpiresAt
-      );
-      const c2 = qrPayload(
-        "checkout",
-        activeSession.id,
-        activeSession.checkoutCode,
-        activeSession.checkoutExpiresAt
-      );
+      const c1 = qrPayload("checkin", activeSession.id, activeSession.checkinCode, activeSession.checkinExpiresAt);
+      const c2 = qrPayload("checkout", activeSession.id, activeSession.checkoutCode, activeSession.checkoutExpiresAt);
 
       setCheckinQrUrl(
-        await QRCode.toDataURL(c1, {
-          width: 520,
-          margin: 2,
-          errorCorrectionLevel: "M"
-        })
+        await QRCode.toDataURL(c1, { width: 520, margin: 2, errorCorrectionLevel: "M" })
       );
-
       setCheckoutQrUrl(
-        await QRCode.toDataURL(c2, {
-          width: 520,
-          margin: 2,
-          errorCorrectionLevel: "M"
-        })
+        await QRCode.toDataURL(c2, { width: 520, margin: 2, errorCorrectionLevel: "M" })
       );
     })();
   }, [activeSession]);
-
-  function setAdminFromEmail(e: string) {
-    const norm = e.trim().toLowerCase();
-    setIsAdmin(ADMIN_EMAILS.map(x => x.toLowerCase()).includes(norm));
-  }
-
-  async function login() {
-    setStatus("");
-
-    if (!email.trim()) return setStatus("Enter an email.");
-    if (!password.trim()) return setStatus("Enter a password.");
-
-    const lic = normalizeLicense(licenseInput);
-    if (!isValidLicense(lic)) {
-      return setStatus("Enter full TREC license number like 123456-SA (suffix required: -SA, -B, or -BB).");
-    }
-
-    if (supabase) {
-      const { error } = await supabase.auth.signInWithPassword({
-        email: email.trim().toLowerCase(),
-        password: password.trim()
-      });
-      if (error) return setStatus(error.message);
-
-      // Store/refresh license in metadata on login (keeps it consistent)
-      await supabase.auth.updateUser({
-        data: { trec_license: lic }
-      });
-    }
-
-    setAuthed(true);
-    setAdminFromEmail(email);
-    setStatus("Logged in.");
-  }
-
-  async function createAccount() {
-    setStatus("");
-
-    if (!email.trim()) return setStatus("Enter an email.");
-    if (!password.trim() || password.trim().length < 8)
-      return setStatus("Use a password with at least 8 characters.");
-
-    const lic = normalizeLicense(licenseInput);
-    if (!isValidLicense(lic)) {
-      return setStatus("Enter full TREC license number like 123456-SA (suffix required: -SA, -B, or -BB).");
-    }
-
-    if (supabase) {
-      const { error } = await supabase.auth.signUp({
-        email: email.trim().toLowerCase(),
-        password: password.trim(),
-        options: { data: { trec_license: lic } }
-      });
-      if (error) return setStatus(error.message);
-    }
-
-    setAuthed(true);
-    setAdminFromEmail(email);
-    setStatus("Account created.");
-  }
-
-  async function logout() {
-    if (supabase) await supabase.auth.signOut();
-    setAuthed(false);
-    setIsAdmin(false);
-    setPassword("");
-    setStatus("Logged out.");
-  }
 
   function importRoster() {
     const r = csvToRoster(rosterCSV);
@@ -382,12 +432,12 @@ export default function App() {
 
   function rosterContains(licenseRaw: string) {
     const lic = normalizeLicense(licenseRaw);
-    return roster.some(r => r.trec_license === lic);
+    return roster.some((r) => r.trec_license === lic);
   }
 
   function upsertAttendance(sessionId: string, trec_license_raw: string) {
     const trec_license = normalizeLicense(trec_license_raw);
-    const idx = attendance.findIndex(a => a.session_id === sessionId && a.trec_license === trec_license);
+    const idx = attendance.findIndex((a) => a.session_id === sessionId && a.trec_license === trec_license);
     if (idx >= 0) return { rec: attendance[idx], idx };
     const rec: Attendance = { session_id: sessionId, trec_license };
     const next = [...attendance, rec];
@@ -401,7 +451,7 @@ export default function App() {
     setAttendance(next);
   }
 
-  function submitScan(
+  async function submitScan(
     method: "scan" | "manual",
     actionOverride?: "checkin" | "checkout",
     licenseOverride?: string
@@ -409,12 +459,14 @@ export default function App() {
     setStatus("");
     if (!activeSession) return setStatus("No active session selected.");
 
+    // Use override if provided, else use the current licenseInput (auto-filled after login)
     const studentLicense = normalizeLicense(licenseOverride || licenseInput);
+
     if (!isValidLicense(studentLicense)) {
       return setStatus("Enter full TREC license number like 123456-SA (suffix required: -SA, -B, or -BB).");
     }
 
-    // Students scanning must be registered; admin manual override can bypass roster if needed.
+    // If student is scanning, require login + roster match
     if (method === "scan") {
       if (!authed) return setStatus("Please log in first.");
       if (!rosterContains(studentLicense)) {
@@ -422,6 +474,7 @@ export default function App() {
       }
     }
 
+    // If scanning QR, parse payload
     let payload: any = null;
     if (!actionOverride) {
       try {
@@ -473,7 +526,7 @@ export default function App() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: "environment" },
-        audio: false
+        audio: false,
       });
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
@@ -488,7 +541,7 @@ export default function App() {
   function stopCamera() {
     const v = videoRef.current;
     const stream = v?.srcObject as MediaStream | null;
-    stream?.getTracks().forEach(t => t.stop());
+    stream?.getTracks().forEach((t) => t.stop());
     if (v) v.srcObject = null;
     setCameraOn(false);
   }
@@ -518,12 +571,12 @@ export default function App() {
 
   const checkedInCount = useMemo(() => {
     if (!activeSession) return 0;
-    return attendance.filter(a => a.session_id === activeSession.id && a.checkin_at).length;
+    return attendance.filter((a) => a.session_id === activeSession.id && a.checkin_at).length;
   }, [attendance, activeSession]);
 
   const checkedOutCount = useMemo(() => {
     if (!activeSession) return 0;
-    return attendance.filter(a => a.session_id === activeSession.id && a.checkout_at).length;
+    return attendance.filter((a) => a.session_id === activeSession.id && a.checkout_at).length;
   }, [attendance, activeSession]);
 
   // Admin: Create session UI
@@ -542,9 +595,9 @@ export default function App() {
       checkinExpiresAt: fromLocalInputValue(newCheckinExp),
       checkoutExpiresAt: fromLocalInputValue(newCheckoutExp),
       checkinCode: randCode(),
-      checkoutCode: randCode()
+      checkoutCode: randCode(),
     };
-    setSessions(prev => [s, ...prev]);
+    setSessions((prev) => [s, ...prev]);
     setActiveSessionId(s.id);
     setNewTitle("");
     setStatus("Session created.");
@@ -586,8 +639,7 @@ export default function App() {
           <div className="card" style={{ marginBottom: 14 }}>
             <b>Supabase not connected yet.</b>
             <div className="small" style={{ marginTop: 6 }}>
-              Add <b>VITE_SUPABASE_URL</b> and <b>VITE_SUPABASE_ANON_KEY</b> in Vercel.
-              For now, the app runs locally using saved device storage.
+              Add <b>VITE_SUPABASE_URL</b> and <b>VITE_SUPABASE_ANON_KEY</b> in Vercel. For now, the app runs using saved device storage.
             </div>
           </div>
         )}
@@ -626,7 +678,7 @@ export default function App() {
                 onChange={(e) => setActiveSessionId(e.target.value)}
                 style={{ height: 56, borderRadius: 18, border: "1px solid var(--border)", fontSize: 18, padding: "0 14px" }}
               >
-                {sessions.map(s => (
+                {sessions.map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.title} — {new Date(s.startsAt).toLocaleString()}
                   </option>
@@ -637,8 +689,8 @@ export default function App() {
 
           {activeSession && (
             <div className="small" style={{ marginTop: 10 }}>
-              Check-in expires: <b>{new Date(activeSession.checkinExpiresAt).toLocaleString()}</b> ·
-              Check-out expires: <b>{new Date(activeSession.checkoutExpiresAt).toLocaleString()}</b>
+              Check-in expires: <b>{new Date(activeSession.checkinExpiresAt).toLocaleString()}</b> · Check-out expires:{" "}
+              <b>{new Date(activeSession.checkoutExpiresAt).toLocaleString()}</b>
             </div>
           )}
         </div>
@@ -647,9 +699,9 @@ export default function App() {
           <>
             <div className="card" style={{ marginBottom: 14 }}>
               <b style={{ fontSize: 18 }}>Student Login</b>
+
               <div className="small" style={{ marginTop: 6 }}>
-                Required: full TREC license number including suffix <b>-SA</b>, <b>-B</b>, or <b>-BB</b>.
-                Example: <b>123456-SA</b>
+                Required: full TREC license number including suffix <b>-SA</b>, <b>-B</b>, or <b>-BB</b>. Example: <b>123456-SA</b>
               </div>
 
               <div className="row" style={{ marginTop: 14 }}>
@@ -661,6 +713,9 @@ export default function App() {
                 <div style={{ flex: 1, minWidth: 260 }}>
                   <label>Password</label>
                   <input value={password} onChange={(e) => setPassword(e.target.value)} type="password" placeholder="At least 8 characters" />
+                  <div className="small" style={{ marginTop: 6 }}>
+                    Password must be at least <b>8</b> characters. (Password can be reset later.)
+                  </div>
                 </div>
               </div>
 
@@ -669,6 +724,7 @@ export default function App() {
                 <input
                   value={licenseInput}
                   onChange={(e) => setLicenseInput(e.target.value)}
+                  onBlur={() => ensureLicenseSavedToProfile(licenseInput)}
                   placeholder="123456-SA"
                   inputMode="text"
                 />
@@ -678,15 +734,45 @@ export default function App() {
               </div>
 
               <div className="row" style={{ marginTop: 12 }}>
-                {!authed ? (
-                  <>
-                    <button className="btn btnPrimary" onClick={login}>Log In</button>
-                    <button className="btn btnSecondary" onClick={createAccount}>Create Account</button>
-                  </>
+                {!recoveryMode ? (
+                  !authed ? (
+                    <>
+                      <button className="btn btnPrimary" onClick={login}>Log In</button>
+                      <button className="btn btnSecondary" onClick={createAccount}>Create Account</button>
+                      <button className="btn btnSecondary" onClick={forgotPassword}>Forgot password?</button>
+                    </>
+                  ) : (
+                    <button className="btn btnSecondary" onClick={logout}>Log Out</button>
+                  )
                 ) : (
-                  <button className="btn btnSecondary" onClick={logout}>Log Out</button>
+                  <button className="btn btnSecondary" onClick={() => setRecoveryMode(false)}>Back to login</button>
                 )}
               </div>
+
+              {recoveryMode && (
+                <div style={{ marginTop: 12 }}>
+                  <label>New Password</label>
+                  <input
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    type="password"
+                    placeholder="At least 8 characters"
+                  />
+                  <div style={{ marginTop: 10 }}>
+                    <label>Confirm New Password</label>
+                    <input
+                      value={newPassword2}
+                      onChange={(e) => setNewPassword2(e.target.value)}
+                      type="password"
+                      placeholder="Re-type new password"
+                    />
+                  </div>
+
+                  <div className="row" style={{ marginTop: 12 }}>
+                    <button className="btn btnPrimary" onClick={setPasswordFromRecovery}>Set New Password</button>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="card">
@@ -781,7 +867,7 @@ export default function App() {
                           maxWidth: 420,
                           borderRadius: 18,
                           border: "1px solid var(--border)",
-                          marginTop: 10
+                          marginTop: 10,
                         }}
                       />
                     )}
@@ -799,7 +885,7 @@ export default function App() {
                           maxWidth: 420,
                           borderRadius: 18,
                           border: "1px solid var(--border)",
-                          marginTop: 10
+                          marginTop: 10,
                         }}
                       />
                     )}
@@ -811,8 +897,7 @@ export default function App() {
             <div className="card" style={{ marginBottom: 14 }}>
               <b style={{ fontSize: 18 }}>Paid Roster Import (Excel → CSV)</b>
               <div className="small" style={{ marginTop: 6 }}>
-                Paste a CSV with a TREC license column. Header examples: <b>trec_license</b> or <b>license</b>.
-                Format must be like <b>123456-SA</b>.
+                Paste a CSV with a TREC license column. Header examples: <b>trec_license</b> or <b>license</b>. Format must be like <b>123456-SA</b>.
               </div>
 
               <div style={{ marginTop: 12 }}>
@@ -835,21 +920,13 @@ export default function App() {
               <div className="row" style={{ marginTop: 12 }}>
                 <div style={{ flex: 1, minWidth: 260 }}>
                   <label>TREC License Number</label>
-                  <input
-                    placeholder="123456-SA"
-                    value={licenseInput}
-                    onChange={(e) => setLicenseInput(e.target.value)}
-                  />
+                  <input placeholder="123456-SA" value={licenseInput} onChange={(e) => setLicenseInput(e.target.value)} />
                 </div>
               </div>
 
               <div className="row" style={{ marginTop: 12 }}>
-                <button className="btn btnSecondary" onClick={() => submitScan("manual", "checkin", licenseInput)}>
-                  Manual Check-In
-                </button>
-                <button className="btn btnSecondary" onClick={() => submitScan("manual", "checkout", licenseInput)}>
-                  Manual Check-Out
-                </button>
+                <button className="btn btnSecondary" onClick={() => submitScan("manual", "checkin", licenseInput)}>Manual Check-In</button>
+                <button className="btn btnSecondary" onClick={() => submitScan("manual", "checkout", licenseInput)}>Manual Check-Out</button>
               </div>
             </div>
 
@@ -864,7 +941,7 @@ export default function App() {
                   className="btn btnPrimary"
                   onClick={() => {
                     if (!activeSession) return setStatus("No active session selected.");
-                    const rows = attendance.filter(a => a.session_id === activeSession.id);
+                    const rows = attendance.filter((a) => a.session_id === activeSession.id);
                     downloadText(`attendance_${activeSession.title.replace(/\s+/g, "_")}.csv`, toCSV(rows));
                     setStatus("Attendance CSV downloaded.");
                   }}

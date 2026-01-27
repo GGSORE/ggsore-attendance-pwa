@@ -53,6 +53,48 @@ type Attendance = {
   notes?: string;
 };
 
+// =========================
+// Supabase table helpers
+// =========================
+const ADMIN_EMAIL = (import.meta.env.VITE_ADMIN_EMAIL as string | undefined)?.toLowerCase() || "";
+
+type DBSess = {
+  id: string;
+  title: string;
+  starts_at: string;
+  ends_at: string;
+  checkin_expires_at: string;
+  checkout_expires_at: string;
+  checkin_code: string;
+  checkout_code: string;
+};
+
+function dbSessToUi(s: DBSess): Session {
+  return {
+    id: s.id,
+    title: s.title,
+    startsAt: s.starts_at,
+    endsAt: s.ends_at,
+    checkinExpiresAt: s.checkin_expires_at,
+    checkoutExpiresAt: s.checkout_expires_at,
+    checkinCode: s.checkin_code,
+    checkoutCode: s.checkout_code,
+  };
+}
+
+function uiSessToDb(s: Session): Omit<DBSess, "id"> {
+  return {
+    title: s.title,
+    starts_at: s.startsAt,
+    ends_at: s.endsAt,
+    checkin_expires_at: s.checkinExpiresAt,
+    checkout_expires_at: s.checkoutExpiresAt,
+    checkin_code: s.checkinCode,
+    checkout_code: s.checkoutCode,
+  };
+}
+
+
 function isoNow() {
   return new Date().toISOString();
 }
@@ -204,9 +246,9 @@ export default function App() {
   const [cameraOn, setCameraOn] = useState(false);
 
   function setAdminFromEmail(e: string) {
-    const norm = e.trim().toLowerCase();
-    setIsAdmin(ADMIN_EMAILS.map((x) => x.toLowerCase()).includes(norm));
-  }
+  const norm = e.trim().toLowerCase();
+  setIsAdmin(Boolean(ADMIN_EMAIL) && norm === ADMIN_EMAIL);
+}
 
   async function loadSessionFromSupabase() {
     if (!supabase) return;
@@ -330,24 +372,71 @@ export default function App() {
     setStatus("Password updated. Please log in.");
   }
 
-  useEffect(() => {
-    const raw = localStorage.getItem("ggsore_attendance_pwa_v2");
-    if (!raw) return;
-    try {
-      const p = JSON.parse(raw);
-      setSessions(p.sessions || []);
-      setActiveSessionId(p.activeSessionId || "");
-      setRoster(p.roster || []);
-      setAttendance(p.attendance || []);
-    } catch {}
-  }, []);
+   // =========================
+  // Supabase: Load sessions + attendance (source of truth)
+  // =========================
+  async function refreshSessions() {
+    if (!supabase) return;
 
+    const { data, error } = await supabase
+      .from("gg_sessions")
+      .select("*")
+      .order("starts_at", { ascending: false })
+      .limit(50);
+
+    if (error) {
+      setStatus(error.message);
+      return;
+    }
+
+    const ui = (data as DBSess[]).map(dbSessToUi);
+    setSessions(ui);
+
+    // if nothing selected yet, pick the latest session
+    if (!activeSessionId && ui.length) {
+      setActiveSessionId(ui[0].id);
+    }
+  }
+
+  async function refreshAttendanceForActiveSession(sessionId: string) {
+    if (!supabase || !sessionId) return;
+
+    const { data, error } = await supabase
+      .from("gg_attendance")
+      .select("*")
+      .eq("session_id", sessionId);
+
+    if (error) {
+      setStatus(error.message);
+      return;
+    }
+
+    const mapped: Attendance[] = (data || []).map((r: any) => ({
+      session_id: r.session_id,
+      trec_license: r.trec_license,
+      checkin_at: r.checkin_at || undefined,
+      checkout_at: r.checkout_at || undefined,
+      method_checkin: (r.method_checkin as any) || undefined,
+      method_checkout: (r.method_checkout as any) || undefined,
+      notes: r.notes || undefined,
+    }));
+
+    setAttendance(mapped);
+  }
+
+  // Run once on load and whenever login state changes
   useEffect(() => {
-    localStorage.setItem(
-      "ggsore_attendance_pwa_v2",
-      JSON.stringify({ sessions, activeSessionId, roster, attendance })
-    );
-  }, [sessions, activeSessionId, roster, attendance]);
+    refreshSessions();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authed, isAdmin]);
+
+  // Whenever active session changes, refresh attendance
+  useEffect(() => {
+    if (!activeSessionId) return;
+    refreshAttendanceForActiveSession(activeSessionId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSessionId]);
+
 
   useEffect(() => {
     if (sessions.length) return;

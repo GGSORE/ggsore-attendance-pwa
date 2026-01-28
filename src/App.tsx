@@ -541,7 +541,7 @@ export default function App() {
     <div style={{ padding: 20, maxWidth: 980, margin: "0 auto" }}>
       <h1 style={{ marginBottom: 6 }}>GGSORE Attendance</h1>
       <div style={{ opacity: 0.8, marginBottom: 18 }}>
-        Checked in: <b>{checkedInCount}</b> â€¢ Checked out: <b>{checkedOutCount}</b>
+       Checked in: <b>{checkedInCount}</b> | Checked out: <b>{checkedOutCount}</b>
       </div>
 
       {status && (

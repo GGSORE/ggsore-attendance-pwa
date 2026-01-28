@@ -90,6 +90,69 @@ function randCode(len = 10) {
 function isoNow() {
   return new Date().toISOString();
 }
+
+const CENTRAL_TZ = "America/Chicago";
+
+// Display an ISO string in Central Time (stable, always CT)
+function formatCentral(iso: string) {
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: CENTRAL_TZ,
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    second: "2-digit",
+  }).format(new Date(iso));
+}
+
+// Convert a datetime-local string (YYYY-MM-DDTHH:mm) interpreted as CENTRAL time into ISO (UTC)
+function centralLocalToIso(dtLocal: string) {
+  // dtLocal example: "2026-01-28T09:00"
+  const [d, t] = dtLocal.split("T");
+  const [Y, M, D] = d.split("-").map(Number);
+  const [h, m] = t.split(":").map(Number);
+
+  // Start with a UTC guess
+  const utcGuess = new Date(Date.UTC(Y, M - 1, D, h, m, 0));
+
+  // Compute Central offset at that moment (handles DST)
+  const offsetMin = tzOffsetMinutes(utcGuess, CENTRAL_TZ);
+
+  // Adjust guess by offset to get actual UTC time for that Central wall time
+  const corrected = new Date(utcGuess.getTime() - offsetMin * 60 * 1000);
+  return corrected.toISOString();
+}
+
+// Helper: timezone offset minutes for a given date in a given IANA tz
+function tzOffsetMinutes(date: Date, timeZone: string) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).formatToParts(date);
+
+  const map: Record<string, string> = {};
+  for (const p of parts) if (p.type !== "literal") map[p.type] = p.value;
+
+  const asUtc = Date.UTC(
+    Number(map.year),
+    Number(map.month) - 1,
+    Number(map.day),
+    Number(map.hour),
+    Number(map.minute),
+    Number(map.second)
+  );
+
+  return (asUtc - date.getTime()) / 60000;
+}
+
+
 function isExpired(expiresAt: string) {
   return Date.now() > new Date(expiresAt).getTime();
 }
@@ -121,6 +184,10 @@ export default function App() {
   const [newPassword2, setNewPassword2] = useState("");
 
   const [tab, setTab] = useState<"student" | "admin">("student");
+  // Admin: session creation (ALL times Central)
+const [adminTitle, setAdminTitle] = useState("Commercial Leasing 101™");
+const [adminStartLocal, setAdminStartLocal] = useState(""); // datetime-local string
+const [adminEndLocal, setAdminEndLocal] = useState("");     // datetime-local string
 
   const [sessions, setSessions] = useState<Session[]>([]);
   const [activeSessionId, setActiveSessionId] = useState("");
@@ -356,40 +423,55 @@ export default function App() {
   }, [activeSession]);
 
   async function createSessionInSupabase() {
-    setStatus("");
-    if (!supabase) return setStatus("Supabase is not connected.");
-    if (!isAdmin) return setStatus("Admin access required.");
+  setStatus("");
+  if (!supabase) return setStatus("Supabase is not connected.");
+  if (!isAdmin) return setStatus("Admin access required.");
 
-    const now = new Date();
-    const start = new Date(now.getTime());
-    const end = new Date(start.getTime() + 3 * 60 * 60 * 1000);
-    const checkinExp = new Date(start.getTime() + 90 * 60 * 1000);
-    const checkoutExp = new Date(end.getTime() + 10 * 60 * 1000);
+  if (!adminTitle.trim()) return setStatus("Enter a class title.");
+  if (!adminStartLocal) return setStatus("Select a class START time (Central).");
+  if (!adminEndLocal) return setStatus("Select a class END time (Central).");
 
-    const newSession: Session = {
-      id: crypto.randomUUID(),
-      title: "New Class Session",
-      startsAt: start.toISOString(),
-      endsAt: end.toISOString(),
-      checkinExpiresAt: checkinExp.toISOString(),
-      checkoutExpiresAt: checkoutExp.toISOString(),
-      checkinCode: randCode(),
-      checkoutCode: randCode(),
-    };
+  const startIso = centralLocalToIso(adminStartLocal);
+  const endIso = centralLocalToIso(adminEndLocal);
 
-    const { data, error } = await supabase
-      .from("gg_sessions")
-      .insert([uiSessToDb(newSession)])
-      .select("*")
-      .single();
+  const startMs = new Date(startIso).getTime();
+  const endMs = new Date(endIso).getTime();
+  if (!(endMs > startMs)) return setStatus("End time must be after start time.");
 
-    if (error) return setStatus(error.message);
+  // Window rules:
+  // Check-in opens 30 min BEFORE start, closes 30 min AFTER start
+  const checkinOpensMs = startMs - 30 * 60 * 1000;
+  const checkinClosesMs = startMs + 30 * 60 * 1000;
 
-    const created = dbSessToUi(data as any);
-    setStatus("Session created.");
-    await refreshSessions();
-    setActiveSessionId(created.id);
-  }
+  // Check-out opens 60 min BEFORE end, closes 60 min AFTER end
+  const checkoutOpensMs = endMs - 60 * 60 * 1000;
+  const checkoutClosesMs = endMs + 60 * 60 * 1000;
+
+  const newSession: Session = {
+    id: crypto.randomUUID(),
+    title: adminTitle.trim(),
+    startsAt: startIso,
+    endsAt: endIso,
+    checkinExpiresAt: new Date(checkinClosesMs).toISOString(),
+    checkoutExpiresAt: new Date(checkoutClosesMs).toISOString(),
+    checkinCode: randCode(),
+    checkoutCode: randCode(),
+  };
+
+  const { data, error } = await supabase
+    .from("gg_sessions")
+    .insert([uiSessToDb(newSession)])
+    .select("*")
+    .single();
+
+  if (error) return setStatus(error.message);
+
+  const created = dbSessToUi(data as any);
+  setStatus("Session created.");
+  await refreshSessions();
+  setActiveSessionId(created.id);
+}
+
 
   async function submitScan(method: "scan" | "manual", actionOverride?: "checkin" | "checkout") {
     setStatus("");
@@ -422,12 +504,32 @@ export default function App() {
     if (sessionId !== activeSession.id) return setStatus("That code is for a different class session.");
     if (!action) return setStatus("Invalid QR format.");
 
-    if (!actionOverride) {
-      if (!code || !expiresAt) return setStatus("Invalid QR format.");
-      if (isExpired(expiresAt)) return setStatus("That code has expired for today.");
-      if (action === "checkin" && code !== activeSession.checkinCode) return setStatus("Invalid check-in code.");
-      if (action === "checkout" && code !== activeSession.checkoutCode) return setStatus("Invalid check-out code.");
-    }
+   if (!actionOverride) {
+  if (!code || !expiresAt) return setStatus("Invalid QR format.");
+
+  const nowMs = Date.now();
+  const startMs = new Date(activeSession.startsAt).getTime();
+  const endMs = new Date(activeSession.endsAt).getTime();
+
+  const checkinOpensMs = startMs - 30 * 60 * 1000;
+  const checkinClosesMs = startMs + 30 * 60 * 1000;
+
+  const checkoutOpensMs = endMs - 60 * 60 * 1000;
+  const checkoutClosesMs = endMs + 60 * 60 * 1000;
+
+  if (action === "checkin") {
+    if (nowMs < checkinOpensMs) return setStatus("Check-in is not open yet.");
+    if (nowMs > checkinClosesMs) return setStatus("Check-in has closed for today.");
+  }
+
+  if (action === "checkout") {
+    if (nowMs < checkoutOpensMs) return setStatus("Check-out is not open yet.");
+    if (nowMs > checkoutClosesMs) return setStatus("Check-out has closed for today.");
+  }
+
+  if (isExpired(expiresAt)) return setStatus("That code has expired for today.");
+}
+
 
     const { data: existing, error: selErr } = await supabase
       .from("gg_attendance")
@@ -696,7 +798,67 @@ export default function App() {
               onClick={createSessionInSupabase}
               style={{ padding: "12px 16px", borderRadius: 12, border: "1px solid #111", background: "#111", color: "#fff", fontWeight: 800 }}
             >
-              Create New Class Session
+              <div style={{ display: "grid", gap: 12, marginBottom: 12 }}>
+  <div>
+    <label>Class title (Central Time)</label>
+    <input
+      value={adminTitle}
+      onChange={(e) => setAdminTitle(e.target.value)}
+      placeholder="Commercial Leasing 101™"
+      style={{
+        width: "100%",
+        height: 46,
+        borderRadius: 12,
+        border: "1px solid #ddd",
+        padding: "0 12px",
+      }}
+    />
+    <div style={{ fontSize: 13, opacity: 0.8, marginTop: 6 }}>
+      Tip: include the ™ as needed. Each session is unique by title + date/time.
+    </div>
+  </div>
+
+  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+    <div>
+      <label>Start (Central)</label>
+      <input
+        type="datetime-local"
+        value={adminStartLocal}
+        onChange={(e) => setAdminStartLocal(e.target.value)}
+        style={{
+          width: "100%",
+          height: 46,
+          borderRadius: 12,
+          border: "1px solid #ddd",
+          padding: "0 12px",
+        }}
+      />
+    </div>
+
+    <div>
+      <label>End (Central)</label>
+      <input
+        type="datetime-local"
+        value={adminEndLocal}
+        onChange={(e) => setAdminEndLocal(e.target.value)}
+        style={{
+          width: "100%",
+          height: 46,
+          borderRadius: 12,
+          border: "1px solid #ddd",
+          padding: "0 12px",
+        }}
+      />
+    </div>
+  </div>
+
+  <div style={{ fontSize: 13, opacity: 0.8 }}>
+    Check-in window: <b>30 min before</b> start through <b>30 min after</b> start.{" "}
+    Check-out window: <b>60 min before</b> end through <b>60 min after</b> end.
+  </div>
+</div>
+
+               Create New Class Session
             </button>
 
             <button

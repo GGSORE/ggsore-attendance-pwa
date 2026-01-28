@@ -789,6 +789,164 @@ const [adminEndLocal, setAdminEndLocal] = useState("");     // datetime-local st
         </div>
       )}
 
+      {/* =========================
+    Student Scan Panel
+========================= */}
+<div style={{ marginTop: 18, border: "1px solid #ddd", borderRadius: 16, padding: 16 }}>
+  <h3 style={{ marginTop: 0 }}>Check In / Check Out</h3>
+
+  {!authed ? (
+    <div style={{ opacity: 0.85 }}>
+      Log in first, then scan the QR code shown on the classroom screen.
+    </div>
+  ) : !activeSession ? (
+    <div style={{ opacity: 0.85 }}>
+      No class session is active yet. Please wait for the instructor to open today’s session.
+    </div>
+  ) : (
+    <>
+      <div className="small" style={{ marginBottom: 10, opacity: 0.85 }}>
+        Active session: <b>{activeSession.title}</b> {" — "} {formatCentral(activeSession.startsAt)}
+      </div>
+
+      <div style={{ display: "grid", gap: 10 }}>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          {!cameraOn ? (
+            <button
+              onClick={startCamera}
+              style={{
+                padding: "14px 18px",
+                borderRadius: 14,
+                border: "1px solid #111",
+                background: "#111",
+                color: "#fff",
+                fontWeight: 900,
+                fontSize: 16,
+              }}
+            >
+              Turn On Camera
+            </button>
+          ) : (
+            <>
+              <button
+                onClick={captureQR}
+                style={{
+                  padding: "14px 18px",
+                  borderRadius: 14,
+                  border: "1px solid #111",
+                  background: "#111",
+                  color: "#fff",
+                  fontWeight: 900,
+                  fontSize: 16,
+                }}
+              >
+                Scan QR Now
+              </button>
+
+              <button
+                onClick={stopCamera}
+                style={{
+                  padding: "14px 18px",
+                  borderRadius: 14,
+                  border: "1px solid #ddd",
+                  background: "#fff",
+                  fontWeight: 900,
+                  fontSize: 16,
+                }}
+              >
+                Stop Camera
+              </button>
+            </>
+          )}
+        </div>
+
+        {/* Camera Preview */}
+        {cameraOn && (
+          <div style={{ border: "1px solid #eee", borderRadius: 16, padding: 12 }}>
+            <div className="small" style={{ marginBottom: 8, opacity: 0.85 }}>
+              Camera preview (aim at the QR code)
+            </div>
+            <video
+              ref={videoRef}
+              style={{ width: "100%", maxWidth: 520, borderRadius: 14 }}
+              playsInline
+              muted
+            />
+          </div>
+        )}
+
+        {/* Fallback: Paste token */}
+        <div>
+          <label style={{ fontWeight: 700 }}>QR Token (if camera fails)</label>
+          <textarea
+            value={scanText}
+            onChange={(e) => setScanText(e.target.value)}
+            placeholder='Paste the QR token text here (it looks like {"action":"checkin",...})'
+            style={{
+              width: "100%",
+              minHeight: 92,
+              borderRadius: 14,
+              border: "1px solid #ddd",
+              padding: 12,
+              fontSize: 14,
+            }}
+          />
+        </div>
+
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <button
+            onClick={() => submitScan("scan")}
+            style={{
+              padding: "14px 18px",
+              borderRadius: 14,
+              border: "1px solid #111",
+              background: "#111",
+              color: "#fff",
+              fontWeight: 900,
+              fontSize: 16,
+            }}
+          >
+            Submit Scan
+          </button>
+
+          <button
+            onClick={() => submitScan("manual", "checkin")}
+            style={{
+              padding: "14px 18px",
+              borderRadius: 14,
+              border: "1px solid #ddd",
+              background: "#fff",
+              fontWeight: 900,
+              fontSize: 16,
+            }}
+          >
+            Manual Check-In
+          </button>
+
+          <button
+            onClick={() => submitScan("manual", "checkout")}
+            style={{
+              padding: "14px 18px",
+              borderRadius: 14,
+              border: "1px solid #ddd",
+              background: "#fff",
+              fontWeight: 900,
+              fontSize: 16,
+            }}
+          >
+            Manual Check-Out
+          </button>
+        </div>
+
+        <div className="small" style={{ opacity: 0.85 }}>
+          Tip: If the camera button doesn’t work, use “QR Token” paste + Submit Scan.
+        </div>
+      </div>
+    </>
+  )}
+</div>
+ 
+       
       {tab === "admin" && canSeeAdminTab && (
         <div style={{ border: "1px solid #ddd", borderRadius: 16, padding: 16 }}>
           <h2 style={{ marginTop: 0 }}>Admin / Instructor</h2>

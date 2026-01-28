@@ -794,7 +794,8 @@ const [adminEndLocal, setAdminEndLocal] = useState("");     // datetime-local st
           <h2 style={{ marginTop: 0 }}>Admin / Instructor</h2>
 <div style={{ display: "grid", gap: 12, marginBottom: 12, background: "#8B0000", padding: 16, borderRadius: 16, color: "#fff" }}>
   <div>
-    <label>Class title (Central Time)</label>
+    <label style={{ color: "#fff", fontWeight: 600 }}>CLASS TITLE</label>
+
     <select
       value={adminTitle}
       onChange={(e) => setAdminTitle(e.target.value)}
@@ -824,7 +825,8 @@ const [adminEndLocal, setAdminEndLocal] = useState("");     // datetime-local st
 
   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
     <div>
-      <label>Start (Central)</label>
+      <label style={{ color: "#fff", fontWeight: 600 }}>START (Central)</label>
+
       <input
         type="datetime-local"
         value={adminStartLocal}
@@ -834,7 +836,8 @@ const [adminEndLocal, setAdminEndLocal] = useState("");     // datetime-local st
     </div>
 
     <div>
-      <label>End (Central)</label>
+      <label style={{ color: "#fff", fontWeight: 600 }}>END (Central)</label>
+
       <input
         type="datetime-local"
         value={adminEndLocal}

@@ -792,30 +792,34 @@ const [adminEndLocal, setAdminEndLocal] = useState("");     // datetime-local st
       {tab === "admin" && canSeeAdminTab && (
         <div style={{ border: "1px solid #ddd", borderRadius: 16, padding: 16 }}>
           <h2 style={{ marginTop: 0 }}>Admin / Instructor</h2>
-
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
-            <button
-              onClick={createSessionInSupabase}
-              style={{ padding: "12px 16px", borderRadius: 12, border: "1px solid #111", background: "#111", color: "#fff", fontWeight: 800 }}
-            >
-              <div style={{ display: "grid", gap: 12, marginBottom: 12 }}>
+<div style={{ display: "grid", gap: 12, marginBottom: 12, background: "#8B0000", padding: 16, borderRadius: 16, color: "#fff" }}>
   <div>
     <label>Class title (Central Time)</label>
-    <input
+    <select
       value={adminTitle}
       onChange={(e) => setAdminTitle(e.target.value)}
-      placeholder="Commercial Leasing 101™"
       style={{
         width: "100%",
         height: 46,
         borderRadius: 12,
-        border: "1px solid #ddd",
+        border: "1px solid #fff",
+        background: "#fff",
+        color: "#111",
         padding: "0 12px",
+        fontSize: 16
       }}
-    />
-    <div style={{ fontSize: 13, opacity: 0.8, marginTop: 6 }}>
-      Tip: include the ™ as needed. Each session is unique by title + date/time.
-    </div>
+    >
+      <option>Commercial Leasing 101™</option>
+      <option>Commercial Leasing Contracts 101™</option>
+      <option>Commercial Letters of Intent 101 for Leasing & Sales™</option>
+      <option>Things You Need to Know About Practicing Law in Real Estate™</option>
+      <option>Deal Dynamics: Deciphering Commercial Real Estate Contracts™</option>
+      <option>Commercial Sales 101: From Client to Contract to Close™</option>
+      <option>Commercial Property Management 101 - (Apartments Not Included)™</option>
+      <option>Lights, Camera, Impact! REALTORS® Guide to Success on Camera™</option>
+      <option>High Stakes: Seed-to-Sale Hemp Law Changes in Texas™ (3 hours)</option>
+      <option>First, It's Not Marijuana: Hemp Laws & Texas Real Estate (2 hours)</option>
+    </select>
   </div>
 
   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
@@ -825,13 +829,7 @@ const [adminEndLocal, setAdminEndLocal] = useState("");     // datetime-local st
         type="datetime-local"
         value={adminStartLocal}
         onChange={(e) => setAdminStartLocal(e.target.value)}
-        style={{
-          width: "100%",
-          height: 46,
-          borderRadius: 12,
-          border: "1px solid #ddd",
-          padding: "0 12px",
-        }}
+        style={{ width: "100%", height: 46, borderRadius: 12, border: "1px solid #fff", background: "#fff", color: "#111", padding: "0 12px" }}
       />
     </div>
 
@@ -841,22 +839,23 @@ const [adminEndLocal, setAdminEndLocal] = useState("");     // datetime-local st
         type="datetime-local"
         value={adminEndLocal}
         onChange={(e) => setAdminEndLocal(e.target.value)}
-        style={{
-          width: "100%",
-          height: 46,
-          borderRadius: 12,
-          border: "1px solid #ddd",
-          padding: "0 12px",
-        }}
+        style={{ width: "100%", height: 46, borderRadius: 12, border: "1px solid #fff", background: "#fff", color: "#111", padding: "0 12px" }}
       />
     </div>
   </div>
 
-  <div style={{ fontSize: 13, opacity: 0.8 }}>
-    Check-in window: <b>30 min before</b> start through <b>30 min after</b> start.{" "}
+  <div style={{ fontSize: 13, opacity: 0.9 }}>
+    Check-in window: <b>30 min before</b> start through <b>30 min after</b> start.
     Check-out window: <b>60 min before</b> end through <b>60 min after</b> end.
   </div>
 </div>
+
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
+            <button
+              onClick={createSessionInSupabase}
+              style={{ padding: "12px 16px", borderRadius: 12, border: "1px solid #111", background: "#111", color: "#fff", fontWeight: 800 }}
+            >
+              
 
                Create New Class Session
             </button>

@@ -717,7 +717,7 @@ export default function App() {
               >
                 {sessions.map((s) => (
                   <option key={s.id} value={s.id}>
-                    {s.title} â€” {new Date(s.startsAt).toLocaleString()}
+                    {s.title} {" — "} {new Date(s.startsAt).toLocaleString()}
                   </option>
                 ))}
               </select>

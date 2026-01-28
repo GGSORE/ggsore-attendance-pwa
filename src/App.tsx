@@ -875,23 +875,25 @@ const [adminEndLocal, setAdminEndLocal] = useState("");     // datetime-local st
           </div>
         )}
 
-        {/* Fallback: Paste token */}
-        <div>
-          <label style={{ fontWeight: 700 }}>QR Token (if camera fails)</label>
-          <textarea
-            value={scanText}
-            onChange={(e) => setScanText(e.target.value)}
-            placeholder='Paste the QR token text here (it looks like {"action":"checkin",...})'
-            style={{
-              width: "100%",
-              minHeight: 92,
-              borderRadius: 14,
-              border: "1px solid #ddd",
-              padding: 12,
-              fontSize: 14,
-            }}
-          />
-        </div>
+      {isAdmin && (
+  <div>
+    <label style={{ fontWeight: 700 }}>QR Token (admin fallback)</label>
+    <textarea
+      value={scanText}
+      onChange={(e) => setScanText(e.target.value)}
+      placeholder="Paste QR token text here if scanning fails"
+      style={{
+        width: "100%",
+        minHeight: 92,
+        borderRadius: 14,
+        border: "1px solid #ddd",
+        padding: 12,
+        fontSize: 14,
+      }}
+    />
+  </div>
+)}
+
 
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
           <button

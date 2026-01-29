@@ -884,16 +884,22 @@ async function uploadHeadshot(file: File) {
   </div>
 
   <div style={{ display: "flex", gap: 14, alignItems: "center", marginTop: 12, flexWrap: "wrap" }}>
-    {headshotSignedUrl ? (
-      style={{
-  width: 80,
-  height: 106,
-  objectFit: "cover",
-  objectPosition: "center top",
-  borderRadius: 10,
-}}
+  
+     {headshotSignedUrl && (
+  <img
+    src={headshotSignedUrl}
+    alt="Headshot"
+    style={{
+      width: 80,
+      height: 106,
+      objectFit: "cover",
+      objectPosition: "center top",
+      borderRadius: 10,
+      border: "1px solid #ddd",
+    }}
+  />
+)}
 
-    )}
 
     <div style={{ display: "grid", gap: 10 }}>
       <input

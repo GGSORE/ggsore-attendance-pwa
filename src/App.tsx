@@ -929,8 +929,6 @@ async function uploadHeadshot(file: File) {
   }}
 />
 
-)}
-
 <button
   disabled={!pendingHeadshot || headshotUploading}
   onClick={async () => {
@@ -963,7 +961,7 @@ async function uploadHeadshot(file: File) {
       )}
     </div>
   </div>
-
+</div>
        
       {/* =========================
     Student Scan Panel

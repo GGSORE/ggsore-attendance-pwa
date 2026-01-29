@@ -959,9 +959,10 @@ async function uploadHeadshot(file: File) {
           Uploading…
         </div>
       )}
-    </div>
+        </div>
   </div>
 </div>
+
        
       {/* =========================
     Student Scan Panel

@@ -178,6 +178,12 @@ export default function App() {
   const [authed, setAuthed] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
 
+  // Headshot (student photo for attendance verification)
+const [headshotPath, setHeadshotPath] = useState<string>("");
+const [headshotSignedUrl, setHeadshotSignedUrl] = useState<string>("");
+const [headshotUploading, setHeadshotUploading] = useState(false);
+
+   
   // Password reset / recovery flow
   const [recoveryMode, setRecoveryMode] = useState(false);
   const [newPassword, setNewPassword] = useState("");
@@ -221,6 +227,11 @@ const [adminEndLocal, setAdminEndLocal] = useState("");     // datetime-local st
     if (lic) setLicenseInput(normalizeLicense(lic));
   }
 
+const hs = (u.user_metadata?.headshot_path as string | undefined) || "";
+setHeadshotPath(hs);
+if (hs) await refreshHeadshotSignedUrl(hs);
+
+   
   // Detect password recovery link + PASSWORD_RECOVERY event
   useEffect(() => {
     if (!supabase) return;
@@ -479,6 +490,10 @@ const [adminEndLocal, setAdminEndLocal] = useState("");     // datetime-local st
     if (!activeSession) return setStatus("No active session selected.");
     if (!authed) return setStatus("Please log in first.");
 
+    if (!headshotPath) {
+  return setStatus("Headshot required. Please upload your photo before checking in/out.");
+}
+     
     const studentLicense = normalizeLicense(licenseInput);
     if (!isValidLicense(studentLicense)) {
       return setStatus("Enter full TREC license like 123456-SA (suffix: -SA, -B, or -BB).");
@@ -603,6 +618,54 @@ const [adminEndLocal, setAdminEndLocal] = useState("");     // datetime-local st
     setCameraOn(false);
   }
 
+async function refreshHeadshotSignedUrl(path: string) {
+  if (!supabase || !path) return;
+  const { data, error } = await supabase.storage.from("gg_headshots").createSignedUrl(path, 60 * 60); // 1 hour
+  if (!error && data?.signedUrl) setHeadshotSignedUrl(data.signedUrl);
+}
+
+async function uploadHeadshot(file: File) {
+  if (!supabase) return setStatus("Supabase is not connected.");
+  const { data } = await supabase.auth.getSession();
+  const user = data.session?.user;
+  if (!user) return setStatus("Please log in again.");
+
+  // basic file checks
+  if (!file.type.startsWith("image/")) return setStatus("Please upload an image file.");
+  if (file.size > 3 * 1024 * 1024) return setStatus("Please use an image under 3MB.");
+
+  setHeadshotUploading(true);
+  setStatus("");
+
+  const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
+  const safeExt = ["jpg", "jpeg", "png", "webp"].includes(ext) ? ext : "jpg";
+  const path = `${user.id}/headshot.${safeExt}`;
+
+  // upsert so students can replace/update
+  const { error: upErr } = await supabase.storage
+    .from("gg_headshots")
+    .upload(path, file, { upsert: true, contentType: file.type });
+
+  if (upErr) {
+    setHeadshotUploading(false);
+    return setStatus(upErr.message);
+  }
+
+  // store path on the user profile (auth metadata)
+  const { error: metaErr } = await supabase.auth.updateUser({ data: { headshot_path: path } });
+  if (metaErr) {
+    setHeadshotUploading(false);
+    return setStatus(metaErr.message);
+  }
+
+  setHeadshotPath(path);
+  await refreshHeadshotSignedUrl(path);
+
+  setHeadshotUploading(false);
+  setStatus("Headshot uploaded. Thank you!");
+}
+
+   
   async function captureQR() {
     // @ts-ignore
     if (!("BarcodeDetector" in window))
@@ -789,6 +852,65 @@ const [adminEndLocal, setAdminEndLocal] = useState("");     // datetime-local st
         </div>
       )}
 
+{/* =========================
+    Headshot Upload (REQUIRED)
+========================= */}
+<div className="card" style={{ marginBottom: 14 }}>
+  <div style={{ fontWeight: 900, fontSize: 18, marginBottom: 6 }}>
+    Upload a photo (required for attendance verification)
+  </div>
+
+  <div className="small" style={{ fontSize: 11, opacity: 0.9, lineHeight: 1.25 }}>
+    We use your headshot to help confirm identity during class check-in and check-out. It helps the instructor verify attendance without needing to exchange sensitive ID information.
+    Your photo is used only for class purposes and is visible only to your instructor/admin.{" "}
+    <a
+      href="https://www.law.cornell.edu/regulations/texas/22-Tex-Admin-Code-SS-535-65"
+      target="_blank"
+      rel="noreferrer"
+      style={{ textDecoration: "underline", fontWeight: 800 }}
+    >
+      Learn More
+    </a>
+  </div>
+
+  <div style={{ display: "flex", gap: 14, alignItems: "center", marginTop: 12, flexWrap: "wrap" }}>
+    {headshotSignedUrl ? (
+      <img
+        src={headshotSignedUrl}
+        alt="Headshot preview"
+        style={{ width: 88, height: 88, borderRadius: 16, objectFit: "cover", border: "1px solid #ddd" }}
+      />
+    ) : (
+      <div style={{ width: 88, height: 88, borderRadius: 16, border: "1px dashed #bbb", display: "grid", placeItems: "center", opacity: 0.75 }}>
+        No photo
+      </div>
+    )}
+
+    <div style={{ display: "grid", gap: 10 }}>
+      <input
+        type="file"
+        accept="image/*"
+        capture="user"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) uploadHeadshot(f);
+        }}
+      />
+
+      <div className="small" style={{ fontSize: 11, opacity: 0.85 }}>
+        Use a clear front-facing photo. Hats/sunglasses off if possible.
+      </div>
+
+      {headshotUploading && (
+        <div className="small" style={{ fontSize: 11, opacity: 0.85 }}>
+          Uploading…
+        </div>
+      )}
+    </div>
+  </div>
+</div>
+
+       
       {/* =========================
     Student Scan Panel
 ========================= */}

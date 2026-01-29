@@ -963,7 +963,6 @@ async function uploadHeadshot(file: File) {
       )}
     </div>
   </div>
-</div>
 
        
       {/* =========================

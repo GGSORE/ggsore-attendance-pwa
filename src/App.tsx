@@ -487,7 +487,10 @@ if (hs) await refreshHeadshotSignedUrl(hs);
 
 
   async function submitScan(method: "scan" | "manual", actionOverride?: "checkin" | "checkout") {
-    setStatus("");
+   if (!headshotPath) {
+  return setStatus("Headshot required. Please upload your photo before checking in or out.");
+}
+ setStatus("");
     if (!supabase) return setStatus("Supabase is not connected.");
     if (!activeSession) return setStatus("No active session selected.");
     if (!authed) return setStatus("Please log in first.");

@@ -599,21 +599,25 @@ if (hs) await refreshHeadshotSignedUrl(hs);
   }
 
   async function startCamera() {
-    setStatus("");
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "environment" },
-        audio: false,
-      });
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
-      }
-      setCameraOn(true);
-    } catch {
-      setStatus("Camera blocked/unavailable. Paste the QR token text instead.");
-    }
+  if (!videoRef.current) return;
+
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: "environment" },
+    });
+
+    videoRef.current.srcObject = stream;
+    await videoRef.current.play();
+    setCameraOn(true);
+
+    // 🔁 Start automatic scanning
+    scanLoop();
+
+  } catch (err) {
+    setStatus("Camera access denied or unavailable.");
   }
+}
+
 
   function stopCamera() {
     const v = videoRef.current;
@@ -955,20 +959,7 @@ async function uploadHeadshot(file: File) {
             </button>
           ) : (
             <>
-              <button
-                onClick={captureQR}
-                style={{
-                  padding: "14px 18px",
-                  borderRadius: 14,
-                  border: "1px solid #111",
-                  background: "#111",
-                  color: "#fff",
-                  fontWeight: 900,
-                  fontSize: 16,
-                }}
-              >
-                Scan QR Now
-              </button>
+             
 
               <button
                 onClick={stopCamera}

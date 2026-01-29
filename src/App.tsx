@@ -885,15 +885,14 @@ async function uploadHeadshot(file: File) {
 
   <div style={{ display: "flex", gap: 14, alignItems: "center", marginTop: 12, flexWrap: "wrap" }}>
     {headshotSignedUrl ? (
-      <img
-        src={headshotSignedUrl}
-        alt="Headshot preview"
-        style={{ width: 88, height: 88, borderRadius: 16, objectFit: "cover", border: "1px solid #ddd" }}
-      />
-    ) : (
-      <div style={{ width: 88, height: 88, borderRadius: 16, border: "1px dashed #bbb", display: "grid", placeItems: "center", opacity: 0.75 }}>
-        No photo
-      </div>
+      style={{
+  width: 80,
+  height: 106,
+  objectFit: "cover",
+  objectPosition: "center top",
+  borderRadius: 10,
+}}
+
     )}
 
     <div style={{ display: "grid", gap: 10 }}>
@@ -912,12 +911,18 @@ async function uploadHeadshot(file: File) {
     <div className="small" style={{ marginBottom: 6 }}>
       Selected photo preview:
     </div>
-    <img
-      src={URL.createObjectURL(pendingHeadshot)}
-      alt="Headshot preview"
-      style={{ width: 120, height: 120, objectFit: "cover", borderRadius: 12 }}
-    />
-  </div>
+   <img
+  src={URL.createObjectURL(pendingHeadshot)}
+  alt="Headshot preview"
+  style={{
+    width: 120,
+    height: 160,           // taller than wide (portrait)
+    objectFit: "cover",    // fills frame cleanly
+    objectPosition: "center top", // keeps faces centered better
+    borderRadius: 12,
+  }}
+/>
+
 )}
 
 <button

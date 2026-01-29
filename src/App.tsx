@@ -883,85 +883,96 @@ async function uploadHeadshot(file: File) {
     </a>
   </div>
 
-  <div style={{ display: "flex", gap: 14, alignItems: "center", marginTop: 12, flexWrap: "wrap" }}>
-  
-     {headshotSignedUrl && (
-  <img
-    src={headshotSignedUrl}
-    alt="Headshot"
-    style={{
-      width: 80,
-      height: 106,
-      objectFit: "cover",
-      objectPosition: "center top",
-      borderRadius: 10,
-      border: "1px solid #ddd",
-    }}
-  />
-)}
-
-
-    <div style={{ display: "grid", gap: 10 }}>
-      <input
-  type="file"
-  accept="image/*"
-  onChange={(e) => {
-    const f = e.target.files?.[0];
-    if (f) setPendingHeadshot(f);
-  }}
-  style={{ marginBottom: 10 }}
-/>
-
-{pendingHeadshot && (
-  <div style={{ marginBottom: 12 }}>
-    <div className="small" style={{ marginBottom: 6 }}>
-      Selected photo preview:
+<div style={{ display: "flex", gap: 14, alignItems: "center", marginTop: 12, flexWrap: "wrap" }}>
+  {/* Saved headshot (portrait) */}
+  {headshotSignedUrl ? (
+    <img
+      src={headshotSignedUrl}
+      alt="Headshot"
+      style={{
+        width: 80,
+        height: 106,
+        objectFit: "cover",
+        objectPosition: "center top",
+        borderRadius: 10,
+        border: "1px solid #ddd",
+      }}
+    />
+  ) : (
+    <div
+      style={{
+        width: 80,
+        height: 106,
+        borderRadius: 10,
+        border: "1px dashed #bbb",
+        display: "grid",
+        placeItems: "center",
+        opacity: 0.75,
+        fontSize: 12,
+      }}
+    >
+      No photo
     </div>
-   <img
-  src={URL.createObjectURL(pendingHeadshot)}
-  alt="Headshot preview"
-  style={{
-    width: 120,
-    height: 160,           // taller than wide (portrait)
-    objectFit: "cover",    // fills frame cleanly
-    objectPosition: "center top", // keeps faces centered better
-    borderRadius: 12,
-  }}
-/>
+  )}
 
-<button
-  disabled={!pendingHeadshot || headshotUploading}
-  onClick={async () => {
-    if (!pendingHeadshot) return;
-    await uploadHeadshot(pendingHeadshot);
-    setPendingHeadshot(null);
-  }}
-  style={{
-    padding: "12px 16px",
-    borderRadius: 12,
-    border: "1px solid #8B0000",
-    background: "#8B0000",
-    color: "#fff",
-    fontWeight: 800,
-    opacity: pendingHeadshot ? 1 : 0.5,
-  }}
->
-  {headshotUploading ? "Uploading..." : "Upload Photo"}
-</button>
+  {/* Choose + preview + upload */}
+  <div style={{ display: "grid", gap: 10 }}>
+    <input
+      type="file"
+      accept="image/*"
+      onChange={(e) => {
+        const f = e.target.files?.[0];
+        if (f) setPendingHeadshot(f);
+      }}
+    />
 
+    {pendingHeadshot && (
+      <img
+        src={URL.createObjectURL(pendingHeadshot)}
+        alt="Selected headshot preview"
+        style={{
+          width: 120,
+          height: 160,
+          objectFit: "cover",
+          objectPosition: "center top",
+          borderRadius: 12,
+          border: "1px solid #ddd",
+        }}
+      />
+    )}
 
+    <button
+      disabled={!pendingHeadshot || headshotUploading}
+      onClick={async () => {
+        if (!pendingHeadshot) return;
+        await uploadHeadshot(pendingHeadshot);
+        setPendingHeadshot(null);
+      }}
+      style={{
+        padding: "12px 16px",
+        borderRadius: 12,
+        border: "1px solid #8B0000",
+        background: "#8B0000",
+        color: "#fff",
+        fontWeight: 800,
+        opacity: !pendingHeadshot || headshotUploading ? 0.6 : 1,
+      }}
+    >
+      {headshotUploading ? "Uploading..." : "Upload Photo"}
+    </button>
+
+    <div className="small" style={{ fontSize: 11, opacity: 0.85 }}>
+      Use a clear front-facing photo. Hats/sunglasses off if possible.
+    </div>
+
+    {headshotUploading && (
       <div className="small" style={{ fontSize: 11, opacity: 0.85 }}>
-        Use a clear front-facing photo. Hats/sunglasses off if possible.
+        Uploading…
       </div>
-
-      {headshotUploading && (
-        <div className="small" style={{ fontSize: 11, opacity: 0.85 }}>
-          Uploading…
-        </div>
-      )}
-        </div>
+    )}
   </div>
 </div>
+
 
        
       {/* =========================

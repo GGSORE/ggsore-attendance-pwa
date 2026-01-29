@@ -182,6 +182,7 @@ export default function App() {
 const [headshotPath, setHeadshotPath] = useState<string>("");
 const [headshotSignedUrl, setHeadshotSignedUrl] = useState<string>("");
 const [headshotUploading, setHeadshotUploading] = useState(false);
+const [pendingHeadshot, setPendingHeadshot] = useState<File | null>(null);
 
    
   // Password reset / recovery flow
@@ -897,14 +898,48 @@ async function uploadHeadshot(file: File) {
 
     <div style={{ display: "grid", gap: 10 }}>
       <input
-        type="file"
-        accept="image/*"
-        capture="user"
-        onChange={(e) => {
-          const f = e.target.files?.[0];
-          if (f) uploadHeadshot(f);
-        }}
-      />
+  type="file"
+  accept="image/*"
+  onChange={(e) => {
+    const f = e.target.files?.[0];
+    if (f) setPendingHeadshot(f);
+  }}
+  style={{ marginBottom: 10 }}
+/>
+
+{pendingHeadshot && (
+  <div style={{ marginBottom: 12 }}>
+    <div className="small" style={{ marginBottom: 6 }}>
+      Selected photo preview:
+    </div>
+    <img
+      src={URL.createObjectURL(pendingHeadshot)}
+      alt="Headshot preview"
+      style={{ width: 120, height: 120, objectFit: "cover", borderRadius: 12 }}
+    />
+  </div>
+)}
+
+<button
+  disabled={!pendingHeadshot || headshotUploading}
+  onClick={async () => {
+    if (!pendingHeadshot) return;
+    await uploadHeadshot(pendingHeadshot);
+    setPendingHeadshot(null);
+  }}
+  style={{
+    padding: "12px 16px",
+    borderRadius: 12,
+    border: "1px solid #8B0000",
+    background: "#8B0000",
+    color: "#fff",
+    fontWeight: 800,
+    opacity: pendingHeadshot ? 1 : 0.5,
+  }}
+>
+  {headshotUploading ? "Uploading..." : "Upload Photo"}
+</button>
+
 
       <div className="small" style={{ fontSize: 11, opacity: 0.85 }}>
         Use a clear front-facing photo. Hats/sunglasses off if possible.

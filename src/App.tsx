@@ -225,11 +225,13 @@ const [adminEndLocal, setAdminEndLocal] = useState("");     // datetime-local st
 
     const lic = (u.user_metadata?.trec_license as string | undefined) || "";
     if (lic) setLicenseInput(normalizeLicense(lic));
-  }
 
-const hs = (u.user_metadata?.headshot_path as string | undefined) || "";
+     const hs = (u.user_metadata?.headshot_path as string | undefined) || "";
 setHeadshotPath(hs);
 if (hs) await refreshHeadshotSignedUrl(hs);
+  }
+
+
 
    
   // Detect password recovery link + PASSWORD_RECOVERY event

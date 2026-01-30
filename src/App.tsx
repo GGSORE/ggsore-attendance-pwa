@@ -366,6 +366,7 @@ export default function App() {
     const r = csvToRoster(rosterCSV);
     setRoster(r);
     setStatus(`Roster loaded: ${r.length} student(s) with valid TREC license format.`);
+  }
 
   function addWalkInToRoster() {
     setStatus("");

@@ -126,6 +126,8 @@ type RosterRow = {
   first_name?: string;
   last_name?: string;
   notes?: string;
+  payment_method?: "pay_link" | "cash";
+  is_walkin?: boolean;
 };
 function csvToRoster(csv: string): RosterRow[] {
   const lines = csv.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
@@ -147,6 +149,8 @@ function csvToRoster(csv: string): RosterRow[] {
       first_name: idxFn >= 0 ? parts[idxFn] : "",
       last_name: idxLn >= 0 ? parts[idxLn] : "",
       notes: idxNotes >= 0 ? parts[idxNotes] : "",
+      payment_method: "pay_link",
+      is_walkin: false,
     });
   }
   return out;
@@ -182,6 +186,11 @@ export default function App() {
 
   const [rosterCSV, setRosterCSV] = useState("trec_license,first_name,last_name,notes\n");
   const [roster, setRoster] = useState<RosterRow[]>([]);
+  const [walkinFirst, setWalkinFirst] = useState("");
+  const [walkinLast, setWalkinLast] = useState("");
+  const [walkinLicense, setWalkinLicense] = useState("");
+  const [walkinPayMethod, setWalkinPayMethod] = useState<"pay_link" | "cash">("pay_link");
+  const [walkinNotes, setWalkinNotes] = useState("");
   const [attendance, setAttendance] = useState<Attendance[]>([]);
 
   // Student scanning
@@ -357,6 +366,43 @@ export default function App() {
     const r = csvToRoster(rosterCSV);
     setRoster(r);
     setStatus(`Roster loaded: ${r.length} student(s) with valid TREC license format.`);
+
+  function addWalkInToRoster() {
+    setStatus("");
+    const lic = normalizeLicense(walkinLicense);
+    if (!isValidLicense(lic)) {
+      return setStatus("Enter full TREC license like 123456-SA (suffix required: -SA, -B, or -BB).");
+    }
+    if (!walkinFirst.trim() || !walkinLast.trim()) {
+      return setStatus("Enter first and last name for the walk-in.");
+    }
+
+    setRoster((prev) => {
+      const existingIdx = prev.findIndex((x) => normalizeLicense(x.trec_license) === lic);
+      const row: RosterRow = {
+        trec_license: lic,
+        first_name: walkinFirst.trim(),
+        last_name: walkinLast.trim(),
+        notes: walkinNotes.trim(),
+        payment_method: walkinPayMethod,
+        is_walkin: true,
+      };
+
+      if (existingIdx >= 0) {
+        const next = [...prev];
+        next[existingIdx] = { ...next[existingIdx], ...row };
+        return next;
+      }
+      return [row, ...prev];
+    });
+
+    setWalkinFirst("");
+    setWalkinLast("");
+    setWalkinLicense("");
+    setWalkinNotes("");
+    setWalkinPayMethod("pay_link");
+    setStatus("Walk-in added to roster.");
+  }
   }
 
   // =========================
@@ -1209,6 +1255,65 @@ export default function App() {
                   />
                 </div>
 
+
+                <div style={{ background: "#fff", border: "1px solid #eee", borderRadius: 16, padding: 16, marginTop: 12 }}>
+                  <div style={{ fontWeight: 900, fontSize: 16, marginBottom: 8 }}>Add Walk-In (paid at the door)</div>
+                  <div className="small" style={{ opacity: 0.85, marginBottom: 10 }}>
+                    Use this when someone registers at the door. Choose Pay Link or Cash, then add them to today’s roster.
+                  </div>
+
+                  <div style={{ display: "grid", gap: 10 }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                      <div>
+                        <label>First name</label>
+                        <input value={walkinFirst} onChange={(e) => setWalkinFirst(e.target.value)} style={{ width: "100%", height: 46, borderRadius: 12, border: "1px solid #ddd", padding: "0 12px" }} />
+                      </div>
+                      <div>
+                        <label>Last name</label>
+                        <input value={walkinLast} onChange={(e) => setWalkinLast(e.target.value)} style={{ width: "100%", height: 46, borderRadius: 12, border: "1px solid #ddd", padding: "0 12px" }} />
+                      </div>
+                    </div>
+
+                    <div style={{ display: "grid", gridTemplateColumns: "1.3fr 0.7fr", gap: 10 }}>
+                      <div>
+                        <label>TREC license (include suffix)</label>
+                        <input
+                          value={walkinLicense}
+                          onChange={(e) => setWalkinLicense(e.target.value)}
+                          placeholder="123456-SA"
+                          style={{ width: "100%", height: 46, borderRadius: 12, border: "1px solid #ddd", padding: "0 12px" }}
+                        />
+                      </div>
+                      <div>
+                        <label>Payment</label>
+                        <select
+                          value={walkinPayMethod}
+                          onChange={(e) => setWalkinPayMethod(e.target.value as any)}
+                          style={{ width: "100%", height: 46, borderRadius: 12, border: "1px solid #ddd", padding: "0 12px" }}
+                        >
+                          <option value="pay_link">Pay Link</option>
+                          <option value="cash">Cash</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label>Notes (optional)</label>
+                      <input value={walkinNotes} onChange={(e) => setWalkinNotes(e.target.value)} style={{ width: "100%", height: 46, borderRadius: 12, border: "1px solid #ddd", padding: "0 12px" }} />
+                    </div>
+
+                    <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                      <button
+                        onClick={addWalkInToRoster}
+                        style={{ padding: "12px 16px", borderRadius: 12, border: "1px solid #8B0000", background: "#8B0000", color: "#fff", fontWeight: 900 }}
+                      >
+                        Add Walk-In
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+
                 <div style={{ background: "#fff", border: "1px solid #eee", borderRadius: 16, padding: 16 }}>
                   <div style={{ fontWeight: 900, fontSize: 16, marginBottom: 8 }}>Attendance</div>
                   <div style={{ overflowX: "auto" }}>
@@ -1217,6 +1322,7 @@ export default function App() {
                         <tr style={{ textAlign: "left" }}>
                           <th style={{ borderBottom: "1px solid #eee", padding: "8px 6px" }}>TREC</th>
                           <th style={{ borderBottom: "1px solid #eee", padding: "8px 6px" }}>Name</th>
+                          <th style={{ borderBottom: "1px solid #eee", padding: "8px 6px" }}>Payment</th>
                           <th style={{ borderBottom: "1px solid #eee", padding: "8px 6px" }}>Check-in</th>
                           <th style={{ borderBottom: "1px solid #eee", padding: "8px 6px" }}>Check-out</th>
                           <th style={{ borderBottom: "1px solid #eee", padding: "8px 6px" }}>Status</th>
@@ -1231,7 +1337,8 @@ export default function App() {
                           return (
                             <tr key={r.trec_license}>
                               <td style={{ borderBottom: "1px solid #f0f0f0", padding: "8px 6px", whiteSpace: "nowrap" }}>{r.trec_license}</td>
-                              <td style={{ borderBottom: "1px solid #f0f0f0", padding: "8px 6px" }}>{name || "—"}</td>
+                              <td style={{ borderBottom: "1px solid #f0f0f0", padding: "8px 6px" }}>{name || "—"}{r.is_walkin ? <span style={{ fontSize: 11, marginLeft: 6, padding: "2px 8px", borderRadius: 999, background: "#f7f7f7", border: "1px solid #eee" }}>Walk-in</span> : null}</td>
+                              <td style={{ borderBottom: "1px solid #f0f0f0", padding: "8px 6px" }}>{r.payment_method === "cash" ? "Cash" : r.payment_method === "pay_link" ? "Pay Link" : "—"}</td>
                               <td style={{ borderBottom: "1px solid #f0f0f0", padding: "8px 6px" }}>{a?.checkin_at ? formatCentral(a.checkin_at) : "—"}</td>
                               <td style={{ borderBottom: "1px solid #f0f0f0", padding: "8px 6px" }}>{a?.checkout_at ? formatCentral(a.checkout_at) : "—"}</td>
                               <td style={{ borderBottom: "1px solid #f0f0f0", padding: "8px 6px" }}>
@@ -1242,7 +1349,7 @@ export default function App() {
                         })}
                         {!roster.length && (
                           <tr>
-                            <td colSpan={5} style={{ padding: 10, opacity: 0.7 }}>
+                            <td colSpan={6} style={{ padding: 10, opacity: 0.7 }}>
                               Load a roster to view expected students.
                             </td>
                           </tr>

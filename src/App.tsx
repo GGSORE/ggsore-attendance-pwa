@@ -362,10 +362,27 @@ export default function App() {
   }, [activeSession]);
 
   // Roster import
-  function importRoster() {
-    const r = csvToRoster(rosterCSV);
-    setRoster(r);
-    setStatus(`Roster loaded: ${r.length} student(s) with valid TREC license format.`);
+  
+  async function handleRosterFile(file: File) {
+    try {
+      const text = await file.text();
+      // normalize line endings
+      const normalized = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+      setRosterCSV(normalized);
+      setStatus(`CSV file loaded: ${file.name}. Tap “Load Roster” to import.`);
+    } catch (e: any) {
+      setStatus(e?.message || "Could not read the CSV file.");
+    }
+  }
+
+function importRoster() {
+    try {
+      const r = csvToRoster(rosterCSV);
+      setRoster(r);
+      setStatus(`Roster loaded: ${r.length} student(s).`);
+    } catch (e: any) {
+      setStatus(e?.message || "Roster import failed. Check the CSV format.");
+    }
   }
 
   function addWalkInToRoster() {
@@ -1246,6 +1263,20 @@ export default function App() {
                     <button onClick={importRoster} style={{ padding: "12px 16px", borderRadius: 12, border: `1px solid ${BRAND_RED}`, background: BRAND_RED, color: "#fff", fontWeight: 900 }}>
                       Load Roster
                     </button>
+                  </div>
+
+                  <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", marginBottom: 10 }}>
+                    <div className="small" style={{ fontSize: 12, opacity: 0.85 }}>
+                      Upload roster CSV:
+                    </div>
+                    <input
+                      type="file"
+                      accept=".csv,text/csv"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) handleRosterFile(f);
+                      }}
+                    />
                   </div>
 
                   <textarea

@@ -118,6 +118,14 @@ function formatCentral(iso: string) {
   }
 }
 
+function capWords(s: string) {
+  return (s || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+
 /* =========================
    CSV (roster) helpers
 ========================= */
@@ -193,6 +201,10 @@ export default function App() {
   const [walkinNotes, setWalkinNotes] = useState("");
   const [attendance, setAttendance] = useState<Attendance[]>([]);
 
+  const [rosterHeadshots, setRosterHeadshots] = useState<Record<string, string>>({});
+  const [absentSet, setAbsentSet] = useState<Record<string, boolean>>({});
+  const [removedSet, setRemovedSet] = useState<Record<string, boolean>>({});
+
   // Student scanning
   const [scanText, setScanText] = useState("");
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -237,6 +249,21 @@ export default function App() {
       if (upErr) throw upErr;
 
       const { error: metaErr } = await supabase.auth.updateUser({ data: { headshot_path: path } });
+    // Also keep a simple public profile map by TREC license for instructor roster display
+    // (Requires gg_profiles table; see SQL snippet)
+    try {
+      const lic = normalizeLicense(licenseInput);
+      if (isValidLicense(lic)) {
+        await supabase.from("gg_profiles").upsert(
+          { trec_license: lic, headshot_path: path, updated_at: isoNow() },
+          { onConflict: "trec_license" }
+        );
+      }
+    } catch {}
+
+    // Refresh roster headshots if this student's license is on the roster
+    await refreshRosterHeadshots();
+
       if (metaErr) throw metaErr;
 
       setHeadshotPath(path);
@@ -248,6 +275,57 @@ export default function App() {
       setHeadshotUploading(false);
     }
   }
+  // =========================
+  // Roster headshot map (gg_profiles)
+  // =========================
+  async function refreshRosterHeadshots(currentRoster: RosterRow[] = roster) {
+    if (!supabase) return;
+    const licenses = Array.from(
+      new Set(
+        currentRoster
+          .map((r) => normalizeLicense(r.trec_license))
+          .filter((lic) => isValidLicense(lic))
+      )
+    );
+
+    if (!licenses.length) {
+      setRosterHeadshots({});
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from("gg_profiles")
+      .select("trec_license, headshot_path")
+      .in("trec_license", licenses);
+
+    if (error) {
+      // table may not exist yet
+      // don't block the UI; just clear
+      setRosterHeadshots({});
+      return;
+    }
+
+    const rows = (data as any[]) || [];
+    const pairs = await Promise.all(
+      rows.map(async (r) => {
+        const lic = String(r.trec_license || "");
+        const path = String(r.headshot_path || "");
+        if (!lic || !path) return [lic, ""] as const;
+        const { data: sdata } = await supabase.storage
+          .from(HEADSHOT_BUCKET)
+          .createSignedUrl(path, 60 * 60); // 1 hour
+        return [lic, sdata?.signedUrl || ""] as const;
+      })
+    );
+
+    const map: Record<string, string> = {};
+    for (const [lic, url] of pairs) {
+      if (lic && url) map[lic] = url;
+    }
+    setRosterHeadshots(map);
+  }
+
+
 
   async function loadSessionFromSupabase() {
     if (!supabase) return;
@@ -375,10 +453,13 @@ export default function App() {
     }
   }
 
-function importRoster() {
+async function importRoster() {
     try {
       const r = csvToRoster(rosterCSV);
       setRoster(r);
+      setRemovedSet({});
+      setAbsentSet({});
+      await refreshRosterHeadshots(r);
       setStatus(`Roster loaded: ${r.length} student(s).`);
     } catch (e: any) {
       setStatus(e?.message || "Roster import failed. Check the CSV format.");
@@ -421,6 +502,20 @@ function importRoster() {
     setWalkinPayMethod("pay_link");
     setStatus("Walk-in added to roster.");
   }
+
+
+  // Keep roster headshots refreshed (admin roster display)
+  useEffect(() => {
+    if (!supabase) return;
+    // Don't run when roster is empty
+    if (!roster.length) {
+      setRosterHeadshots({});
+      return;
+    }
+    refreshRosterHeadshots();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roster.length, authed]);
+
 
   // =========================
   // Auth
@@ -596,6 +691,7 @@ function importRoster() {
   // =========================
   async function submitToken(method: "scan" | "manual", forceAction?: "checkin" | "checkout", tokenOverride?: string) {
     setStatus("");
+    setScanResult(null);
     if (!supabase) return setStatus("Supabase is not connected.");
 
     const lic = normalizeLicense(licenseInput);
@@ -656,25 +752,37 @@ function importRoster() {
 
   async function startCamera() {
     setStatus("");
-    try {
-      setCameraOn(true);
+    setScanResult(null);
 
+    try {
+      // Request the stream first
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: "environment" },
         audio: false,
       });
 
-      const v = videoRef.current;
-      if (v) {
-        v.srcObject = stream;
-        await v.play();
-      }
+      // Show the preview panel
+      setCameraOn(true);
 
-      // start scanning loop (if supported)
+      // Wait for the <video> to mount
+      await new Promise((r) => requestAnimationFrame(() => r(null)));
+
+      let v = videoRef.current;
+      if (!v) {
+        await new Promise((r) => setTimeout(r, 50));
+        v = videoRef.current;
+      }
+      if (!v) throw new Error("Camera preview not ready.");
+
+      v.srcObject = stream;
+      await v.play();
+
+      // Start scanning loop
       scanLoop();
-    } catch (e: any) {
+    } catch {
       setCameraOn(false);
       setStatus("Camera blocked/unavailable. Please allow camera permissions.");
+      setScanResult({ kind: "error", message: "Camera blocked/unavailable. Please allow camera permissions." });
     }
   }
 
@@ -759,13 +867,11 @@ function importRoster() {
     <div style={{ minHeight: "100vh", background: "#f7f7f8", padding: 16, fontFamily: "Century Gothic, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif" }}>
       <div style={{ maxWidth: 980, margin: "0 auto" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
-          <div style={{ width: 54, height: 54, borderRadius: 14, background: BRAND_RED, color: "#fff", display: "grid", placeItems: "center", fontWeight: 900 }}>
-            GG
-          </div>
+          <img src="/ggsore-logo.png" alt="The Guillory Group School of Real Estate" style={{ width: 54, height: 54, borderRadius: 14, objectFit: "contain" }} />
           <div style={{ flex: 1, minWidth: 240 }}>
-            <div style={{ fontSize: 22, fontWeight: 900, marginBottom: 2 }}>GGSORE Attendance</div>
+            <div style={{ fontSize: 22, fontWeight: 900, marginBottom: 2 }}>The Guillory Group School of Real Estate Student Attendance App</div>
             <div style={{ opacity: 0.75, fontSize: 13 }}>
-              Check in & check out for continuing education classes.
+              TREC Education Provider #9998-CEP
             </div>
           </div>
         </div>
@@ -870,7 +976,7 @@ function importRoster() {
                 <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                   <button
                     onClick={setPasswordFromRecovery}
-                    style={{ padding: "12px 16px", borderRadius: 12, border: "1px solid #111", background: "#111", color: "#fff", fontWeight: 900 }}
+                    style={{ padding: "12px 16px", borderRadius: 12, border: "1px solid #8B0000", background: "#8B0000", color: "#fff", fontWeight: 900 }}
                   >
                     Set New Password
                   </button>
@@ -888,7 +994,7 @@ function importRoster() {
                   <>
                     <button
                       onClick={login}
-                      style={{ padding: "12px 16px", borderRadius: 12, border: "1px solid #111", background: "#111", color: "#fff", fontWeight: 900 }}
+                      style={{ padding: "12px 16px", borderRadius: 12, border: "1px solid #8B0000", background: "#8B0000", color: "#fff", fontWeight: 900 }}
                     >
                       Log In
                     </button>
@@ -1029,6 +1135,40 @@ function importRoster() {
                   <div style={{ fontSize: 12, opacity: 0.85, marginBottom: 10 }}>
                     Active session: <b>{activeSession.title}</b> — {formatCentral(activeSession.startsAt)}
                   </div>
+      {scanResult && (
+        <div
+          role="status"
+          aria-live="polite"
+          style={{
+            marginBottom: 12,
+            borderRadius: 16,
+            padding: "14px 16px",
+            border: scanResult.kind === "success" ? "1px solid #0a7a2f" : "1px solid #b00020",
+            background: scanResult.kind === "success" ? "#e8f5ec" : "#fde8ea",
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+            fontWeight: 900,
+          }}
+        >
+          <div
+            style={{
+              width: 34,
+              height: 34,
+              borderRadius: 999,
+              display: "grid",
+              placeItems: "center",
+              background: scanResult.kind === "success" ? "#0a7a2f" : "#b00020",
+              color: "#fff",
+              fontSize: 18,
+            }}
+          >
+            {scanResult.kind === "success" ? "✓" : "!"}
+          </div>
+          <div>{scanResult.message}</div>
+        </div>
+      )}
+
 
                   <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
                     {!cameraOn ? (
@@ -1198,7 +1338,7 @@ function importRoster() {
                     padding: "12px 16px",
                     borderRadius: 12,
                     border: "1px solid rgba(255,255,255,0.35)",
-                    background: "#111",
+                    background: "#8B0000",
                     color: "#fff",
                     fontWeight: 900,
                   }}
@@ -1348,45 +1488,145 @@ function importRoster() {
                 <div style={{ background: "#fff", border: "1px solid #eee", borderRadius: 16, padding: 16 }}>
                   <div style={{ fontWeight: 900, fontSize: 16, marginBottom: 8 }}>Attendance</div>
                   <div style={{ overflowX: "auto" }}>
-                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-                      <thead>
-                        <tr style={{ textAlign: "left" }}>
-                          <th style={{ borderBottom: "1px solid #eee", padding: "8px 6px" }}>TREC</th>
-                          <th style={{ borderBottom: "1px solid #eee", padding: "8px 6px" }}>Name</th>
-                          <th style={{ borderBottom: "1px solid #eee", padding: "8px 6px" }}>Payment</th>
-                          <th style={{ borderBottom: "1px solid #eee", padding: "8px 6px" }}>Check-in</th>
-                          <th style={{ borderBottom: "1px solid #eee", padding: "8px 6px" }}>Check-out</th>
-                          <th style={{ borderBottom: "1px solid #eee", padding: "8px 6px" }}>Status</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {roster.map((r) => {
-                          const a = attendanceMap.get(r.trec_license);
-                          const name = `${r.first_name || ""} ${r.last_name || ""}`.trim();
-                          const checkedIn = Boolean(a?.checkin_at);
-                          const checkedOut = Boolean(a?.checkout_at);
-                          return (
-                            <tr key={r.trec_license}>
-                              <td style={{ borderBottom: "1px solid #f0f0f0", padding: "8px 6px", whiteSpace: "nowrap" }}>{r.trec_license}</td>
-                              <td style={{ borderBottom: "1px solid #f0f0f0", padding: "8px 6px" }}>{name || "—"}{r.is_walkin ? <span style={{ fontSize: 11, marginLeft: 6, padding: "2px 8px", borderRadius: 999, background: "#f7f7f7", border: "1px solid #eee" }}>Walk-in</span> : null}</td>
-                              <td style={{ borderBottom: "1px solid #f0f0f0", padding: "8px 6px" }}>{r.payment_method === "cash" ? "Cash" : r.payment_method === "pay_link" ? "Pay Link" : "—"}</td>
-                              <td style={{ borderBottom: "1px solid #f0f0f0", padding: "8px 6px" }}>{a?.checkin_at ? formatCentral(a.checkin_at) : "—"}</td>
-                              <td style={{ borderBottom: "1px solid #f0f0f0", padding: "8px 6px" }}>{a?.checkout_at ? formatCentral(a.checkout_at) : "—"}</td>
-                              <td style={{ borderBottom: "1px solid #f0f0f0", padding: "8px 6px" }}>
-                                {checkedOut ? "Checked out" : checkedIn ? "Checked in" : "Absent"}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                        {!roster.length && (
-                          <tr>
-                            <td colSpan={6} style={{ padding: 10, opacity: 0.7 }}>
-                              Load a roster to view expected students.
-                            </td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
+                    
+<table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+  <thead>
+    <tr style={{ textAlign: "left" }}>
+      <th style={{ borderBottom: "1px solid #eee", padding: "8px 6px" }}>Name</th>
+      <th style={{ borderBottom: "1px solid #eee", padding: "8px 6px" }}>TREC</th>
+      <th style={{ borderBottom: "1px solid #eee", padding: "8px 6px" }}>Photo</th>
+      <th style={{ borderBottom: "1px solid #eee", padding: "8px 6px" }}>Payment</th>
+      <th style={{ borderBottom: "1px solid #eee", padding: "8px 6px" }}>Check-in</th>
+      <th style={{ borderBottom: "1px solid #eee", padding: "8px 6px" }}>Check-out</th>
+      <th style={{ borderBottom: "1px solid #eee", padding: "8px 6px" }}>Status</th>
+      <th style={{ borderBottom: "1px solid #eee", padding: "8px 6px" }} />
+    </tr>
+  </thead>
+  <tbody>
+    {roster
+      .filter((r) => !removedSet[normalizeLicense(r.trec_license)])
+      .map((r) => {
+        const lic = normalizeLicense(r.trec_license);
+        const a = getAtt(r.trec_license);
+        const checkedIn = !!a?.checkin_at;
+        const checkedOut = !!a?.checkout_at;
+        const photo = rosterHeadshots[lic] || "";
+        const statusText = checkedOut
+          ? "Completed"
+          : checkedIn
+          ? "Checked in"
+          : absentSet[lic]
+          ? "Absent (marked)"
+          : "Not checked in";
+
+        return (
+          <tr key={r.trec_license}>
+            <td style={{ borderBottom: "1px solid #f2f2f2", padding: "8px 6px", fontWeight: 700 }}>
+              {capWords(r.first_name)} {capWords(r.last_name)}
+            </td>
+            <td style={{ borderBottom: "1px solid #f2f2f2", padding: "8px 6px", fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" }}>
+              {lic}
+            </td>
+            <td style={{ borderBottom: "1px solid #f2f2f2", padding: "8px 6px" }}>
+              {photo ? (
+                <img
+                  src={photo}
+                  alt="Headshot"
+                  style={{
+                    width: 44,
+                    height: 58,
+                    objectFit: "cover",
+                    objectPosition: "center top",
+                    borderRadius: 8,
+                    border: "1px solid #eee",
+                  }}
+                />
+              ) : (
+                <div className="small" style={{ opacity: 0.6 }}>—</div>
+              )}
+            </td>
+            <td style={{ borderBottom: "1px solid #f2f2f2", padding: "8px 6px" }}>
+              {r.payment || ""}
+            </td>
+            <td style={{ borderBottom: "1px solid #f2f2f2", padding: "8px 6px" }}>
+              {a?.checkin_at ? formatCentral(a.checkin_at) : "—"}
+            </td>
+            <td style={{ borderBottom: "1px solid #f2f2f2", padding: "8px 6px" }}>
+              {a?.checkout_at ? formatCentral(a.checkout_at) : "—"}
+            </td>
+            <td style={{ borderBottom: "1px solid #f2f2f2", padding: "8px 6px", fontWeight: 800 }}>
+              {statusText}
+            </td>
+            <td style={{ borderBottom: "1px solid #f2f2f2", padding: "8px 6px" }}>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <button
+                  onClick={() => setAbsentSet((p) => ({ ...p, [lic]: !p[lic] }))}
+                  style={{
+                    padding: "6px 10px",
+                    borderRadius: 10,
+                    border: "1px solid #ddd",
+                    background: absentSet[lic] ? "#8B0000" : "#fff",
+                    color: absentSet[lic] ? "#fff" : "#111",
+                    fontWeight: 800,
+                    fontSize: 12,
+                  }}
+                >
+                  {absentSet[lic] ? "Undo absent" : "Mark absent"}
+                </button>
+
+                <button
+                  onClick={() => setRemovedSet((p) => ({ ...p, [lic]: true }))}
+                  style={{
+                    padding: "6px 10px",
+                    borderRadius: 10,
+                    border: "1px solid #ddd",
+                    background: "#fff",
+                    color: "#111",
+                    fontWeight: 800,
+                    fontSize: 12,
+                  }}
+                >
+                  Remove
+                </button>
+
+                <button
+                  onClick={async () => {
+                    if (!supabase) return;
+                    try {
+                      await supabase.from("gg_profiles").upsert(
+                        { trec_license: lic, headshot_path: null, updated_at: isoNow() },
+                        { onConflict: "trec_license" }
+                      );
+                      setRosterHeadshots((m) => {
+                        const n = { ...m };
+                        delete n[lic];
+                        return n;
+                      });
+                      setStatus(`Headshot cleared for ${lic}.`);
+                    } catch {
+                      setStatus("Could not clear headshot (check gg_profiles table/policies).");
+                    }
+                  }}
+                  style={{
+                    padding: "6px 10px",
+                    borderRadius: 10,
+                    border: "1px solid #ddd",
+                    background: "#fff",
+                    color: "#111",
+                    fontWeight: 800,
+                    fontSize: 12,
+                  }}
+                >
+                  Clear photo
+                </button>
+              </div>
+            </td>
+          </tr>
+        );
+      })}
+  </tbody>
+</table>
+
                   </div>
                 </div>
               </>

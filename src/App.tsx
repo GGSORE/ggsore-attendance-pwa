@@ -416,6 +416,58 @@ export default function App() {
     setAttendance(mapped);
   }
 
+
+  // =========================
+  // Admin manual attendance overrides (for hotspots / glitches)
+  // =========================
+  async function adminSetAttendance(
+    trecLicRaw: string,
+    action: "checkin" | "checkout" | "clear_checkin" | "clear_checkout"
+  ) {
+    if (!supabase) return setStatus("Supabase is not connected.");
+    if (!activeSessionId) return setStatus("No active class session.");
+    const trec_license = normalizeLicense(trecLicRaw);
+
+    if (!isValidLicense(trec_license)) {
+      return setStatus("Invalid TREC license format.");
+    }
+
+    const patch: any = { session_id: activeSessionId, trec_license };
+
+    if (action === "checkin") {
+      patch.checkin_at = isoNow();
+      patch.method_checkin = "manual";
+      // A manually checked-in student is not absent
+      setAbsentSet((prev) => {
+        const n = new Set(prev);
+        n.delete(trec_license);
+        return n;
+      });
+    } else if (action === "checkout") {
+      patch.checkout_at = isoNow();
+      patch.method_checkout = "manual";
+      setAbsentSet((prev) => {
+        const n = new Set(prev);
+        n.delete(trec_license);
+        return n;
+      });
+    } else if (action === "clear_checkin") {
+      patch.checkin_at = null;
+      patch.method_checkin = null;
+    } else if (action === "clear_checkout") {
+      patch.checkout_at = null;
+      patch.method_checkout = null;
+    }
+
+    const { error } = await supabase.from("gg_attendance").upsert(patch, { onConflict: "session_id,trec_license" });
+    if (error) return setStatus(error.message);
+
+    await refreshAttendanceForActiveSession(activeSessionId);
+    if (action === "checkin") setStatus("Manual check-in saved.");
+    if (action === "checkout") setStatus("Manual check-out saved.");
+    if (action === "clear_checkin") setStatus("Check-in cleared.");
+    if (action === "clear_checkout") setStatus("Check-out cleared.");
+  }
   useEffect(() => {
     refreshSessions();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -474,7 +526,7 @@ async function importRoster() {
     }
   }
 
-  function addWalkInToRoster() {
+  async function addWalkInToRoster() {
     setStatus("");
     const lic = normalizeLicense(walkinLicense);
     if (!isValidLicense(lic)) {
@@ -502,6 +554,10 @@ async function importRoster() {
       }
       return [row, ...prev];
     });
+
+    if (activeSessionId) {
+      await adminSetAttendance(row.trec_license, "checkin");
+    }
 
     setWalkinFirst("");
     setWalkinLast("");
@@ -1451,11 +1507,7 @@ async function importRoster() {
                     />
                   </div>
 
-                  <textarea
-                    value={rosterCSV}
-                    onChange={(e) => setRosterCSV(e.target.value)}
-                    style={{ width: "100%", minHeight: 140, borderRadius: 14, border: "1px solid #ddd", padding: 12, fontSize: 13 }}
-                  />
+                  
                 </div>
 
 
@@ -1620,6 +1672,39 @@ async function importRoster() {
                 >
                   Remove
                 </button>
+
+                  {/* Manual overrides */}
+                  {!checkedIn ? (
+                    <button
+                      onClick={() => adminSetAttendance(lic, "checkin")}
+                      style={{ padding: "8px 10px", borderRadius: 12, border: "1px solid #8B0000", background: "#8B0000", color: "#fff", fontWeight: 800 }}
+                    >
+                      Manual Check-In
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => adminSetAttendance(lic, "clear_checkin")}
+                      style={{ padding: "8px 10px", borderRadius: 12, border: "1px solid #ddd", background: "#fff", fontWeight: 800 }}
+                    >
+                      Undo Check-In
+                    </button>
+                  )}
+
+                  {!checkedOut ? (
+                    <button
+                      onClick={() => adminSetAttendance(lic, "checkout")}
+                      style={{ padding: "8px 10px", borderRadius: 12, border: "1px solid #8B0000", background: "#8B0000", color: "#fff", fontWeight: 800 }}
+                    >
+                      Manual Check-Out
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => adminSetAttendance(lic, "clear_checkout")}
+                      style={{ padding: "8px 10px", borderRadius: 12, border: "1px solid #ddd", background: "#fff", fontWeight: 800 }}
+                    >
+                      Undo Check-Out
+                    </button>
+                  )}
 
                 <button
                   onClick={async () => {

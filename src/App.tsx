@@ -945,6 +945,14 @@ async function importRoster() {
     return m;
   }, [attendance]);
 
+  // Helper: get attendance record for a license in the active session
+  const getAtt = (licRaw: string): Attendance | null => {
+    const lic = normalizeLicense(licRaw);
+    return attendanceMap.get(lic) || null;
+  };
+
+
+
   const checkedInCount = useMemo(() => attendance.filter((a) => Boolean(a.checkin_at)).length, [attendance]);
   const checkedOutCount = useMemo(() => attendance.filter((a) => Boolean(a.checkout_at)).length, [attendance]);
 

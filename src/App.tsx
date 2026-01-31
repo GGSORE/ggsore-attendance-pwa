@@ -207,6 +207,8 @@ export default function App() {
 
   // Student scanning
   const [scanText, setScanText] = useState("");
+  type ScanResult = { kind: "success" | "error"; message: string };
+  const [scanResult, setScanResult] = useState<ScanResult | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const scanTimerRef = useRef<number | null>(null);
   const [cameraOn, setCameraOn] = useState(false);
@@ -384,7 +386,10 @@ export default function App() {
     if (!supabase) return;
 
     const { data, error } = await supabase.from("gg_sessions").select("*").order("starts_at", { ascending: false }).limit(50);
-    if (error) return setStatus(error.message);
+    if (error) {
+      setScanResult({ kind: "error", message: error.message });
+      return setStatus(error.message);
+    }
 
     const ui = (data as DBSess[]).map(dbSessToUi);
     setSessions(ui);
@@ -394,7 +399,10 @@ export default function App() {
   async function refreshAttendanceForActiveSession(sessionId: string) {
     if (!supabase || !sessionId) return;
     const { data, error } = await supabase.from("gg_attendance").select("*").eq("session_id", sessionId);
-    if (error) return setStatus(error.message);
+    if (error) {
+      setScanResult({ kind: "error", message: error.message });
+      return setStatus(error.message);
+    }
 
     const mapped: Attendance[] = (data || []).map((r: any) => ({
       session_id: r.session_id,
@@ -540,7 +548,10 @@ async function importRoster() {
       email: email.trim().toLowerCase(),
       password: password.trim(),
     });
-    if (error) return setStatus(error.message);
+    if (error) {
+      setScanResult({ kind: "error", message: error.message });
+      return setStatus(error.message);
+    }
 
     await ensureLicenseSavedToProfile(lic);
 
@@ -564,7 +575,10 @@ async function importRoster() {
       password: password.trim(),
       options: { data: { trec_license: lic } },
     });
-    if (error) return setStatus(error.message);
+    if (error) {
+      setScanResult({ kind: "error", message: error.message });
+      return setStatus(error.message);
+    }
 
     setAuthed(true);
     setAdminFromEmail(email);
@@ -589,7 +603,10 @@ async function importRoster() {
     if (!e) return setStatus("Enter your email first, then tap Forgot password.");
 
     const { error } = await supabase.auth.resetPasswordForEmail(e, { redirectTo: window.location.origin });
-    if (error) return setStatus(error.message);
+    if (error) {
+      setScanResult({ kind: "error", message: error.message });
+      return setStatus(error.message);
+    }
 
     setStatus("Password reset email sent. Open it on this same device to set a new password.");
   }
@@ -601,7 +618,10 @@ async function importRoster() {
     if (newPassword !== newPassword2) return setStatus("Passwords do not match.");
 
     const { error } = await supabase.auth.updateUser({ password: newPassword });
-    if (error) return setStatus(error.message);
+    if (error) {
+      setScanResult({ kind: "error", message: error.message });
+      return setStatus(error.message);
+    }
 
     setRecoveryMode(false);
     setNewPassword("");
@@ -679,7 +699,10 @@ async function importRoster() {
     };
 
     const { error } = await supabase.from("gg_sessions").insert([{ id: s.id, ...uiSessToDb(s) }]);
-    if (error) return setStatus(error.message);
+    if (error) {
+      setScanResult({ kind: "error", message: error.message });
+      return setStatus(error.message);
+    }
 
     await refreshSessions();
     setActiveSessionId(s.id);
@@ -724,11 +747,20 @@ async function importRoster() {
     }
 
     const { error } = await supabase.from("gg_attendance").upsert([patch], { onConflict: "session_id,trec_license" });
-    if (error) return setStatus(error.message);
+    if (error) {
+      setScanResult({ kind: "error", message: error.message });
+      return setStatus(error.message);
+    }
 
     await refreshAttendanceForActiveSession(activeSession.id);
     setScanText("");
     setStatus(action === "checkin" ? "Checked in!" : "Checked out!");
+    setScanResult({
+      kind: "success",
+      message: action === "checkin"
+        ? "✅ Success! Check-in recorded."
+        : "✅ Success! Check-out recorded.",
+    });
   }
 
   // =========================

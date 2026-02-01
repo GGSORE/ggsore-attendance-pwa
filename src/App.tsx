@@ -16,6 +16,7 @@ const supabase =
    Brand / Links
 ========================= */
 const BRAND_RED = "#8B0000";
+const HEADSHOT_BUCKET = "gg-headshots";
 // Official TREC rules landing page; section §535.65 includes the student identity requirement.
 const TREC_RULES_URL = "https://www.trec.texas.gov/agency-information/rules-and-laws/trec-rules";
 
@@ -251,6 +252,7 @@ export default function App() {
       if (upErr) throw upErr;
 
       const { error: metaErr } = await supabase.auth.updateUser({ data: { headshot_path: path } });
+      if (metaErr) throw metaErr;
     // Also keep a simple public profile map by TREC license for instructor roster display
     // (Requires gg_profiles table; see SQL snippet)
     try {
@@ -266,7 +268,6 @@ export default function App() {
     // Refresh roster headshots if this student's license is on the roster
     await refreshRosterHeadshots();
 
-      if (metaErr) throw metaErr;
 
       setHeadshotPath(path);
       await refreshHeadshotSignedUrl(path);
@@ -276,8 +277,7 @@ export default function App() {
     } finally {
       setHeadshotUploading(false);
     }
-  }
-  // =========================
+  }  // =========================
   // Roster headshot map (gg_profiles)
   // =========================
   async function refreshRosterHeadshots(currentRoster: RosterRow[] = roster) {
@@ -421,53 +421,57 @@ export default function App() {
   // Admin manual attendance overrides (for hotspots / glitches)
   // =========================
   async function adminSetAttendance(
-    trecLicRaw: string,
-    action: "checkin" | "checkout" | "clear_checkin" | "clear_checkout"
+    licRaw: string,
+    action: "checkin" | "checkout" | "undo_checkin" | "undo_checkout"
   ) {
-    if (!supabase) return setStatus("Supabase is not connected.");
-    if (!activeSessionId) return setStatus("No active class session.");
-    const trec_license = normalizeLicense(trecLicRaw);
+    if (!supabase || !activeSessionId) return;
 
-    if (!isValidLicense(trec_license)) {
-      return setStatus("Invalid TREC license format.");
-    }
+    const lic = normalizeLicense(licRaw);
+    const now = isoNow();
 
-    const patch: any = { session_id: activeSessionId, trec_license };
+    const patch: any = { session_id: activeSessionId, trec_license: lic };
 
     if (action === "checkin") {
-      patch.checkin_at = isoNow();
+      patch.checkin_at = now;
       patch.method_checkin = "manual";
-      // A manually checked-in student is not absent
-      setAbsentSet((prev) => {
-        const n = new Set(prev);
-        n.delete(trec_license);
-        return n;
-      });
     } else if (action === "checkout") {
-      patch.checkout_at = isoNow();
+      patch.checkout_at = now;
       patch.method_checkout = "manual";
-      setAbsentSet((prev) => {
-        const n = new Set(prev);
-        n.delete(trec_license);
-        return n;
-      });
-    } else if (action === "clear_checkin") {
+    } else if (action === "undo_checkin") {
       patch.checkin_at = null;
       patch.method_checkin = null;
-    } else if (action === "clear_checkout") {
+    } else if (action === "undo_checkout") {
       patch.checkout_at = null;
       patch.method_checkout = null;
     }
 
-    const { error } = await supabase.from("gg_attendance").upsert(patch, { onConflict: "session_id,trec_license" });
-    if (error) return setStatus(error.message);
+    try {
+      setStatus("Saving…");
 
-    await refreshAttendanceForActiveSession(activeSessionId);
-    if (action === "checkin") setStatus("Manual check-in saved.");
-    if (action === "checkout") setStatus("Manual check-out saved.");
-    if (action === "clear_checkin") setStatus("Check-in cleared.");
-    if (action === "clear_checkout") setStatus("Check-out cleared.");
+      const { error } = await supabase
+        .from("gg_attendance")
+        .upsert(patch, { onConflict: "session_id,trec_license" });
+
+      if (error) {
+        setStatus(error.message);
+        return;
+      }
+
+      await refreshAttendanceForActiveSession(activeSessionId);
+
+      // Refresh headshots too (safe: if any errors, we don't crash the admin UI)
+      try {
+        await refreshRosterHeadshotsForLicenses([lic]);
+      } catch {
+        /* ignore */
+      }
+
+      setStatus("Saved.");
+    } catch (e: any) {
+      setStatus(e?.message || "Failed to save attendance.");
+    }
   }
+
   useEffect(() => {
     refreshSessions();
     // eslint-disable-next-line react-hooks/exhaustive-deps

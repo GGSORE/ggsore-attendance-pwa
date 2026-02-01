@@ -199,6 +199,56 @@ export default function App() {
 
   const [rosterCSV, setRosterCSV] = useState("trec_license,first_name,last_name,notes\n");
   const [roster, setRoster] = useState<RosterRow[]>([]);
+
+const [adminStatus, setAdminStatus] = useState<string>("");
+
+// =========================
+// Roster persistence (admin convenience)
+// Persists roster per session in browser localStorage so it survives reloads.
+// =========================
+const rosterStorageKey = (sessionId: string) => `ggsore_roster_v1_${sessionId}`;
+
+function loadRosterFromStorage(sessionId: string): RosterRow[] {
+  try {
+    const raw = window.localStorage.getItem(rosterStorageKey(sessionId));
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as RosterRow[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveRosterToStorage(sessionId: string, rows: RosterRow[]) {
+  try {
+    window.localStorage.setItem(rosterStorageKey(sessionId), JSON.stringify(rows));
+  } catch {
+    // ignore storage errors (private mode, quota, etc.)
+  }
+}
+
+// Load roster whenever the active session changes
+useEffect(() => {
+  if (!activeSessionId) return;
+  const stored = loadRosterFromStorage(activeSessionId);
+  if (stored.length) {
+    setRoster(stored);
+    refreshRosterHeadshots(stored);
+  } else {
+    setRoster([]);
+    setRosterHeadshots({});
+  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [activeSessionId]);
+
+async function upsertRosterRowsForSession(sessionId: string, rows: RosterRow[]) {
+  // For now, roster lives in localStorage (and in React state).
+  // Attendance is persisted in Supabase; roster is convenience data for instructors.
+  saveRosterToStorage(sessionId, rows);
+  setRoster(rows);
+  await refreshRosterHeadshots(rows);
+}
+
   const [walkinFirst, setWalkinFirst] = useState("");
   const [walkinLast, setWalkinLast] = useState("");
   const [walkinLicense, setWalkinLicense] = useState("");
@@ -574,7 +624,7 @@ async function importRoster() {
     // Ensure roster exists in Supabase for the active session
     if (supabase && activeSessionId) {
       await upsertRosterRowsForSession(activeSessionId, [row]);
-      await refreshRosterHeadshots(activeSessionId);
+      await refreshRosterHeadshots(rowsNext);
     }
 
     // Mark as PRESENT by default: create/refresh attendance row (notes store payment method)
@@ -1006,7 +1056,7 @@ async function importRoster() {
             style={{
               padding: "12px 16px",
               borderRadius: 999,
-              border: "1px solid #ddd",
+              border: "1px solid #1167b1",
               background: tab === "student" ? BRAND_RED : "#fff",
               color: tab === "student" ? "#fff" : "#111",
               fontWeight: 900,
@@ -1021,7 +1071,7 @@ async function importRoster() {
               style={{
                 padding: "12px 16px",
                 borderRadius: 999,
-                border: "1px solid #ddd",
+                border: "1px solid #1167b1",
                 background: tab === "admin" ? BRAND_RED : "#fff",
                 color: tab === "admin" ? "#fff" : "#111",
                 fontWeight: 900,
@@ -1033,7 +1083,7 @@ async function importRoster() {
         </div>
 
         {status && (
-          <div style={{ background: "#fff", border: "1px solid #eee", borderRadius: 16, padding: 12, marginBottom: 12 }} aria-live="polite">
+          <div style={{ background: "#187bcd", border: "1px solid #1167b1", borderRadius: 16, padding: 12, marginBottom: 12 }} aria-live="polite">
             {status}
           </div>
         )}
@@ -1041,7 +1091,7 @@ async function importRoster() {
         {/* =========================
            Auth / Profile
         ========================= */}
-        <div style={{ background: "#fff", border: "1px solid #eee", borderRadius: 16, padding: 16, marginBottom: 12 }}>
+        <div style={{ background: "#187bcd", border: "1px solid #1167b1", borderRadius: 16, padding: 16, marginBottom: 12 }}>
           <div style={{ display: "grid", gap: 10 }}>
             <div style={{ display: "grid", gap: 6 }}>
               <label style={{ fontWeight: 800 }}>Email</label>
@@ -1049,7 +1099,7 @@ async function importRoster() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="name@email.com"
-                style={{ height: 52, borderRadius: 14, border: "1px solid #ddd", padding: "0 12px", fontSize: 16 }}
+                style={{ height: 52, borderRadius: 14, border: "1px solid #1167b1", padding: "0 12px", fontSize: 16 }}
               />
             </div>
 
@@ -1061,7 +1111,7 @@ async function importRoster() {
                   onChange={(e) => setPassword(e.target.value)}
                   type="password"
                   placeholder="••••••••"
-                  style={{ height: 52, borderRadius: 14, border: "1px solid #ddd", padding: "0 12px", fontSize: 16 }}
+                  style={{ height: 52, borderRadius: 14, border: "1px solid #1167b1", padding: "0 12px", fontSize: 16 }}
                 />
               </div>
             )}
@@ -1075,7 +1125,7 @@ async function importRoster() {
                 value={licenseInput}
                 onChange={(e) => setLicenseInput(e.target.value)}
                 placeholder="0123456-SA"
-                style={{ height: 52, borderRadius: 14, border: "1px solid #ddd", padding: "0 12px", fontSize: 16 }}
+                style={{ height: 52, borderRadius: 14, border: "1px solid #1167b1", padding: "0 12px", fontSize: 16 }}
               />
             </div>
 
@@ -1087,26 +1137,26 @@ async function importRoster() {
                   onChange={(e) => setNewPassword(e.target.value)}
                   type="password"
                   placeholder="New password (8+ characters)"
-                  style={{ height: 52, borderRadius: 14, border: "1px solid #ddd", padding: "0 12px", fontSize: 16, marginBottom: 10 }}
+                  style={{ height: 52, borderRadius: 14, border: "1px solid #1167b1", padding: "0 12px", fontSize: 16, marginBottom: 10 }}
                 />
                 <input
                   value={newPassword2}
                   onChange={(e) => setNewPassword2(e.target.value)}
                   type="password"
                   placeholder="Confirm new password"
-                  style={{ height: 52, borderRadius: 14, border: "1px solid #ddd", padding: "0 12px", fontSize: 16, marginBottom: 12 }}
+                  style={{ height: 52, borderRadius: 14, border: "1px solid #1167b1", padding: "0 12px", fontSize: 16, marginBottom: 12 }}
                 />
 
                 <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                   <button
                     onClick={setPasswordFromRecovery}
-                    style={{ padding: "12px 16px", borderRadius: 12, border: "1px solid #8B0000", background: "#8B0000", color: "#fff", fontWeight: 900 }}
+                    style={{ padding: "12px 16px", borderRadius: 12, border: "1px solid #1167b1", background: "#8B0000", color: "#fff", fontWeight: 900 }}
                   >
                     Set New Password
                   </button>
                   <button
                     onClick={() => setRecoveryMode(false)}
-                    style={{ padding: "12px 16px", borderRadius: 12, border: "1px solid #ddd", background: "#fff", fontWeight: 900 }}
+                    style={{ padding: "12px 16px", borderRadius: 12, border: "1px solid #1167b1", background: "#187bcd", fontWeight: 900 }}
                   >
                     Back to login
                   </button>
@@ -1118,19 +1168,19 @@ async function importRoster() {
                   <>
                     <button
                       onClick={login}
-                      style={{ padding: "12px 16px", borderRadius: 12, border: "1px solid #8B0000", background: "#8B0000", color: "#fff", fontWeight: 900 }}
+                      style={{ padding: "12px 16px", borderRadius: 12, border: "1px solid #1167b1", background: "#8B0000", color: "#fff", fontWeight: 900 }}
                     >
                       Log In
                     </button>
                     <button
                       onClick={createAccount}
-                      style={{ padding: "12px 16px", borderRadius: 12, border: "1px solid #ddd", background: "#fff", fontWeight: 900 }}
+                      style={{ padding: "12px 16px", borderRadius: 12, border: "1px solid #1167b1", background: "#187bcd", fontWeight: 900 }}
                     >
                       Create Account
                     </button>
                     <button
                       onClick={forgotPassword}
-                      style={{ padding: "12px 16px", borderRadius: 12, border: "1px solid #ddd", background: "#fff", fontWeight: 900 }}
+                      style={{ padding: "12px 16px", borderRadius: 12, border: "1px solid #1167b1", background: "#187bcd", fontWeight: 900 }}
                     >
                       Forgot password
                     </button>
@@ -1138,7 +1188,7 @@ async function importRoster() {
                 ) : (
                   <button
                     onClick={logout}
-                    style={{ padding: "12px 16px", borderRadius: 12, border: "1px solid #ddd", background: "#fff", fontWeight: 900 }}
+                    style={{ padding: "12px 16px", borderRadius: 12, border: "1px solid #1167b1", background: "#187bcd", fontWeight: 900 }}
                   >
                     Log out
                   </button>
@@ -1161,7 +1211,7 @@ async function importRoster() {
         {tab === "student" && (
           <>
             {/* Headshot Upload */}
-            <div style={{ background: "#fff", border: "1px solid #eee", borderRadius: 16, padding: 16, marginBottom: 12 }}>
+            <div style={{ background: "#187bcd", border: "1px solid #1167b1", borderRadius: 16, padding: 16, marginBottom: 12 }}>
               <div style={{ fontWeight: 900, fontSize: 16, marginBottom: 6 }}>Headshot</div>
               <div style={{ fontSize: 12, opacity: 0.85, marginBottom: 10 }}>
                 A clear headshot helps verify identity for CE attendance (no driver license uploads needed).
@@ -1178,7 +1228,7 @@ async function importRoster() {
                       objectFit: "cover",
                       objectPosition: "center top",
                       borderRadius: 12,
-                      border: "1px solid #ddd",
+                      border: "1px solid #1167b1",
                     }}
                   />
                 ) : (
@@ -1218,7 +1268,7 @@ async function importRoster() {
                         objectFit: "cover",
                         objectPosition: "center top",
                         borderRadius: 12,
-                        border: "1px solid #ddd",
+                        border: "1px solid #1167b1",
                       }}
                     />
                   )}
@@ -1247,7 +1297,7 @@ async function importRoster() {
             </div>
 
             {/* Student Scan Panel */}
-            <div style={{ background: "#fff", border: "1px solid #eee", borderRadius: 16, padding: 16 }}>
+            <div style={{ background: "#187bcd", border: "1px solid #1167b1", borderRadius: 16, padding: 16 }}>
               <h3 style={{ marginTop: 0 }}>Check In / Check Out</h3>
 
               {!authed ? (
@@ -1316,8 +1366,8 @@ async function importRoster() {
                         style={{
                           padding: "14px 18px",
                           borderRadius: 14,
-                          border: "1px solid #ddd",
-                          background: "#fff",
+                          border: "1px solid #1167b1",
+                          background: "#187bcd",
                           fontWeight: 900,
                           fontSize: 16,
                         }}
@@ -1332,7 +1382,7 @@ async function importRoster() {
                   </div>
 
                   {/* Always render video element (so ref always exists) */}
-                  <div style={{ border: "1px solid #eee", borderRadius: 16, padding: 12, display: cameraOn ? "block" : "none" }}>
+                  <div style={{ border: "1px solid #1167b1", borderRadius: 16, padding: 12, display: cameraOn ? "block" : "none" }}>
                     <div style={{ fontSize: 12, opacity: 0.85, marginBottom: 8 }}>
                       Camera preview (aim at the QR code)
                     </div>
@@ -1354,7 +1404,7 @@ async function importRoster() {
                           width: "100%",
                           minHeight: 92,
                           borderRadius: 14,
-                          border: "1px solid #ddd",
+                          border: "1px solid #1167b1",
                           padding: 12,
                           fontSize: 14,
                           marginTop: 6,
@@ -1386,8 +1436,13 @@ async function importRoster() {
            ADMIN TAB
         ========================= */}
         {tab === "admin" && canSeeAdminTab && (
-          <div style={{ background: "#fff", border: "1px solid #eee", borderRadius: 16, padding: 16 }}>
+          <div style={{ background: "#187bcd", border: "1px solid #1167b1", borderRadius: 16, padding: 16 }}>
             <h2 style={{ marginTop: 0 }}>Admin / Instructor</h2>
+          {adminStatus && (
+            <div style={{ marginTop: 8, marginBottom: 8, padding: "10px 12px", borderRadius: 12, background: "#f1f5ff", border: "1px solid #1167b1", fontWeight: 800 }}>
+              {adminStatus}
+            </div>
+          )}
 
             <div style={{ background: BRAND_RED, color: "#fff", borderRadius: 16, padding: 16, marginBottom: 12 }}>
               <div style={{ display: "grid", gap: 12 }}>
@@ -1457,7 +1512,7 @@ async function importRoster() {
               <select
                 value={activeSessionId}
                 onChange={(e) => setActiveSessionId(e.target.value)}
-                style={{ height: 56, borderRadius: 18, border: "1px solid #ddd", fontSize: 16, padding: "0 14px" }}
+                style={{ height: 56, borderRadius: 18, border: "1px solid #1167b1", fontSize: 16, padding: "0 14px" }}
               >
                 {sessions.map((s) => (
                   <option key={s.id} value={s.id}>
@@ -1470,7 +1525,7 @@ async function importRoster() {
             {activeSession && (
               <>
                 <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
-                  <div style={{ background: "#f8f8f9", border: "1px solid #eee", borderRadius: 16, padding: 12, minWidth: 220 }}>
+                  <div style={{ background: "#f8f8f9", border: "1px solid #1167b1", borderRadius: 16, padding: 12, minWidth: 220 }}>
                     <div style={{ fontWeight: 900, marginBottom: 6 }}>Check-In QR</div>
                     {checkinQrUrl && <img src={checkinQrUrl} alt="Check-in QR" style={{ width: "100%", maxWidth: 320, borderRadius: 12 }} />}
                     <div style={{ fontSize: 12, opacity: 0.8, marginTop: 6 }}>
@@ -1478,7 +1533,7 @@ async function importRoster() {
                     </div>
                   </div>
 
-                  <div style={{ background: "#f8f8f9", border: "1px solid #eee", borderRadius: 16, padding: 12, minWidth: 220 }}>
+                  <div style={{ background: "#f8f8f9", border: "1px solid #1167b1", borderRadius: 16, padding: 12, minWidth: 220 }}>
                     <div style={{ fontWeight: 900, marginBottom: 6 }}>Check-Out QR</div>
                     {checkoutQrUrl && <img src={checkoutQrUrl} alt="Check-out QR" style={{ width: "100%", maxWidth: 320, borderRadius: 12 }} />}
                     <div style={{ fontSize: 12, opacity: 0.8, marginTop: 6 }}>
@@ -1486,13 +1541,13 @@ async function importRoster() {
                     </div>
                   </div>
 
-                  <div style={{ flex: 1, minWidth: 220, background: "#f8f8f9", border: "1px solid #eee", borderRadius: 16, padding: 12 }}>
+                  <div style={{ flex: 1, minWidth: 220, background: "#f8f8f9", border: "1px solid #1167b1", borderRadius: 16, padding: 12 }}>
                     <div style={{ fontWeight: 900, marginBottom: 6 }}>Stats</div>
                     <div>Checked in: <b>{checkedInCount}</b> • Checked out: <b>{checkedOutCount}</b></div>
                   </div>
                 </div>
 
-                <div style={{ background: "#fff", border: "1px solid #eee", borderRadius: 16, padding: 16, marginBottom: 12 }}>
+                <div style={{ background: "#187bcd", border: "1px solid #1167b1", borderRadius: 16, padding: 16, marginBottom: 12 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginBottom: 10 }}>
                     <div>
                       <div style={{ fontWeight: 900, fontSize: 16 }}>Roster Import (CSV)</div>
@@ -1521,7 +1576,7 @@ async function importRoster() {
                 </div>
 
 
-                <div style={{ background: "#fff", border: "1px solid #eee", borderRadius: 16, padding: 16, marginTop: 12 }}>
+                <div style={{ background: "#187bcd", border: "1px solid #1167b1", borderRadius: 16, padding: 16, marginTop: 12 }}>
                   <div style={{ fontWeight: 900, fontSize: 16, marginBottom: 8 }}>Add Walk-In (paid at the door)</div>
                   <div className="small" style={{ opacity: 0.85, marginBottom: 10 }}>
                     Use this when someone registers at the door. Choose Pay Link or Cash, then add them to today’s roster.
@@ -1531,11 +1586,11 @@ async function importRoster() {
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                       <div>
                         <label>First name</label>
-                        <input value={walkinFirst} onChange={(e) => setWalkinFirst(e.target.value)} style={{ width: "100%", height: 46, borderRadius: 12, border: "1px solid #ddd", padding: "0 12px" }} />
+                        <input value={walkinFirst} onChange={(e) => setWalkinFirst(e.target.value)} style={{ width: "100%", height: 46, borderRadius: 12, border: "1px solid #1167b1", padding: "0 12px" }} />
                       </div>
                       <div>
                         <label>Last name</label>
-                        <input value={walkinLast} onChange={(e) => setWalkinLast(e.target.value)} style={{ width: "100%", height: 46, borderRadius: 12, border: "1px solid #ddd", padding: "0 12px" }} />
+                        <input value={walkinLast} onChange={(e) => setWalkinLast(e.target.value)} style={{ width: "100%", height: 46, borderRadius: 12, border: "1px solid #1167b1", padding: "0 12px" }} />
                       </div>
                     </div>
 
@@ -1546,7 +1601,7 @@ async function importRoster() {
                           value={walkinLicense}
                           onChange={(e) => setWalkinLicense(e.target.value)}
                           placeholder="123456-SA"
-                          style={{ width: "100%", height: 46, borderRadius: 12, border: "1px solid #ddd", padding: "0 12px" }}
+                          style={{ width: "100%", height: 46, borderRadius: 12, border: "1px solid #1167b1", padding: "0 12px" }}
                         />
                       </div>
                       <div>
@@ -1554,7 +1609,7 @@ async function importRoster() {
                         <select
                           value={walkinPayMethod}
                           onChange={(e) => setWalkinPayMethod(e.target.value as any)}
-                          style={{ width: "100%", height: 46, borderRadius: 12, border: "1px solid #ddd", padding: "0 12px" }}
+                          style={{ width: "100%", height: 46, borderRadius: 12, border: "1px solid #1167b1", padding: "0 12px" }}
                         >
                           <option value="pay_link">Pay Link</option>
                           <option value="cash">Cash</option>
@@ -1564,13 +1619,13 @@ async function importRoster() {
 
                     <div>
                       <label>Notes (optional)</label>
-                      <input value={walkinNotes} onChange={(e) => setWalkinNotes(e.target.value)} style={{ width: "100%", height: 46, borderRadius: 12, border: "1px solid #ddd", padding: "0 12px" }} />
+                      <input value={walkinNotes} onChange={(e) => setWalkinNotes(e.target.value)} style={{ width: "100%", height: 46, borderRadius: 12, border: "1px solid #1167b1", padding: "0 12px" }} />
                     </div>
 
                     <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                       <button
                         onClick={addWalkInToRoster}
-                        style={{ padding: "12px 16px", borderRadius: 12, border: "1px solid #8B0000", background: "#8B0000", color: "#fff", fontWeight: 900 }}
+                        style={{ padding: "12px 16px", borderRadius: 12, border: "1px solid #1167b1", background: "#8B0000", color: "#fff", fontWeight: 900 }}
                       >
                         Add Walk-In
                       </button>
@@ -1579,7 +1634,7 @@ async function importRoster() {
                 </div>
 
 
-                <div style={{ background: "#fff", border: "1px solid #eee", borderRadius: 16, padding: 16 }}>
+                <div style={{ background: "#187bcd", border: "1px solid #1167b1", borderRadius: 16, padding: 16 }}>
                   <div style={{ fontWeight: 900, fontSize: 16, marginBottom: 8 }}>Attendance</div>
                   <div style={{ overflowX: "auto" }}>
                     
@@ -1632,7 +1687,7 @@ async function importRoster() {
                     objectFit: "cover",
                     objectPosition: "center top",
                     borderRadius: 8,
-                    border: "1px solid #eee",
+                    border: "1px solid #1167b1",
                   }}
                 />
               ) : (
@@ -1658,7 +1713,7 @@ async function importRoster() {
                   style={{
                     padding: "6px 10px",
                     borderRadius: 10,
-                    border: "1px solid #ddd",
+                    border: "1px solid #1167b1",
                     background: absentSet[lic] ? "#8B0000" : "#fff",
                     color: absentSet[lic] ? "#fff" : "#111",
                     fontWeight: 800,
@@ -1673,9 +1728,9 @@ async function importRoster() {
                   style={{
                     padding: "6px 10px",
                     borderRadius: 10,
-                    border: "1px solid #ddd",
-                    background: "#fff",
-                    color: "#111",
+                    border: "1px solid #1167b1",
+                    background: "#187bcd",
+                    color: "#fff",
                     fontWeight: 800,
                     fontSize: 12,
                   }}
@@ -1687,14 +1742,14 @@ async function importRoster() {
                   {!checkedIn ? (
                     <button
                       onClick={() => adminSetAttendance(lic, "checkin")}
-                      style={{ padding: "8px 10px", borderRadius: 12, border: "1px solid #8B0000", background: "#8B0000", color: "#fff", fontWeight: 800 }}
+                      style={{ padding: "8px 10px", borderRadius: 12, border: "1px solid #1167b1", background: "#8B0000", color: "#fff", fontWeight: 800 }}
                     >
                       Manual Check-In
                     </button>
                   ) : (
                     <button
                       onClick={() => adminSetAttendance(lic, "clear_checkin")}
-                      style={{ padding: "8px 10px", borderRadius: 12, border: "1px solid #ddd", background: "#fff", fontWeight: 800 }}
+                      style={{ padding: "8px 10px", borderRadius: 12, border: "1px solid #1167b1", background: "#1167b1", fontWeight: 800 }}
                     >
                       Undo Check-In
                     </button>
@@ -1703,14 +1758,14 @@ async function importRoster() {
                   {!checkedOut ? (
                     <button
                       onClick={() => adminSetAttendance(lic, "checkout")}
-                      style={{ padding: "8px 10px", borderRadius: 12, border: "1px solid #8B0000", background: "#8B0000", color: "#fff", fontWeight: 800 }}
+                      style={{ padding: "8px 10px", borderRadius: 12, border: "1px solid #1167b1", background: "#8B0000", color: "#fff", fontWeight: 800 }}
                     >
                       Manual Check-Out
                     </button>
                   ) : (
                     <button
                       onClick={() => adminSetAttendance(lic, "clear_checkout")}
-                      style={{ padding: "8px 10px", borderRadius: 12, border: "1px solid #ddd", background: "#fff", fontWeight: 800 }}
+                      style={{ padding: "8px 10px", borderRadius: 12, border: "1px solid #1167b1", background: "#1167b1", fontWeight: 800 }}
                     >
                       Undo Check-Out
                     </button>
@@ -1737,9 +1792,9 @@ async function importRoster() {
                   style={{
                     padding: "6px 10px",
                     borderRadius: 10,
-                    border: "1px solid #ddd",
-                    background: "#fff",
-                    color: "#111",
+                    border: "1px solid #03254c",
+                    background: "#03254c",
+                    color: "#fff",
                     fontWeight: 800,
                     fontSize: 12,
                   }}

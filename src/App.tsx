@@ -735,6 +735,13 @@ async function importRoster() {
     return d.toISOString().slice(0, 16);
   });
 
+  // Walk-in form (Admin only)
+  const [walkInLicense, setWalkInLicense] = useState<string>("");
+  const [walkInFirst, setWalkInFirst] = useState<string>("");
+  const [walkInLast, setWalkInLast] = useState<string>("");
+  const [walkInPayment, setWalkInPayment] = useState<"pay_link" | "cash">("pay_link");
+
+
   function computeSessionTimes(startLocal: string, endLocal: string) {
     const start = new Date(startLocal);
     const end = new Date(endLocal);
@@ -1319,35 +1326,9 @@ async function importRoster() {
                       </button>
                     )}
 
-                    <button
-                      onClick={() => submitToken("manual", "checkin")}
-                      style={{
-                        padding: "14px 18px",
-                        borderRadius: 14,
-                        border: `1px solid ${BRAND_RED}`,
-                        background: "#fff",
-                        color: BRAND_RED,
-                        fontWeight: 900,
-                        fontSize: 16,
-                      }}
-                    >
-                      Manual Check-In
-                    </button>
+                    
 
-                    <button
-                      onClick={() => submitToken("manual", "checkout")}
-                      style={{
-                        padding: "14px 18px",
-                        borderRadius: 14,
-                        border: `1px solid ${BRAND_RED}`,
-                        background: "#fff",
-                        color: BRAND_RED,
-                        fontWeight: 900,
-                        fontSize: 16,
-                      }}
-                    >
-                      Manual Check-Out
-                    </button>
+                    
                   </div>
 
                   {/* Always render video element (so ref always exists) */}

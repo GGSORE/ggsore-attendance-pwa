@@ -1320,7 +1320,7 @@ async function importRoster() {
             </div>
 
             {/* Student Scan Panel */}
-            <div style={ background: "#fff", border: "1px solid #ddd", borderRadius: 16, padding: 16 }>
+            <div style={{ background: "#fff", border: "1px solid #ddd", borderRadius: 16, padding: 16 }}>
               <h3 style={{ marginTop: 0 }}>Check In / Check Out</h3>
 
               {!authed ? (
@@ -1459,7 +1459,7 @@ async function importRoster() {
            ADMIN TAB
         ========================= */}
         {tab === "admin" && canSeeAdminTab && (
-          <div style={ background: "#fff", border: "1px solid #ddd", borderRadius: 16, padding: 16 }>
+          <div style={{ background: "#fff", border: "1px solid #ddd", borderRadius: 16, padding: 16 }}>
             <h2 style={{ marginTop: 0 }}>Admin / Instructor</h2>
           {adminStatus && (
             <div style={{ marginTop: 8, marginBottom: 8, padding: "10px 12px", borderRadius: 12, background: "#f1f5ff", border: "1px solid #1167b1", fontWeight: 800 }}>
@@ -1657,7 +1657,7 @@ async function importRoster() {
                 </div>
 
 
-                <div style={ background: "#fff", border: "1px solid #ddd", borderRadius: 16, padding: 16 }>
+                <div style={{ background: "#fff", border: "1px solid #ddd", borderRadius: 16, padding: 16 }}>
                   <div style={{ fontWeight: 900, fontSize: 16, marginBottom: 8 }}>Attendance</div>
                   <div style={{ overflowX: "auto" }}>
                     

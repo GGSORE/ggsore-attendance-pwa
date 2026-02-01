@@ -1599,7 +1599,7 @@ async function importRoster() {
                 </div>
 
 
-                <div style={ background: "#fff", border: "1px solid #ddd", borderRadius: 16, padding: 16, marginTop: 12 }>
+                <div style={{ background: "#fff", border: "1px solid #ddd", borderRadius: 16, padding: 16, marginTop: 12 }}>
                   <div style={{ fontWeight: 900, fontSize: 16, marginBottom: 8 }}>Add Walk-In (paid at the door)</div>
                   <div className="small" style={{ opacity: 0.85, marginBottom: 10 }}>
                     Use this when someone registers at the door. Choose Pay Link or Cash, then add them to today’s roster.

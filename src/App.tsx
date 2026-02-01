@@ -178,6 +178,9 @@ export default function App() {
   // Auth / profile
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [licenseInput, setLicenseInput] = useState("");
   const [authed, setAuthed] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
@@ -249,10 +252,10 @@ async function upsertRosterRowsForSession(sessionId: string, rows: RosterRow[]) 
   await refreshRosterHeadshots(rows);
 }
 
-  const [walkinFirst, setWalkinFirst] = useState("");
-  const [walkinLast, setWalkinLast] = useState("");
-  const [walkinLicense, setWalkinLicense] = useState("");
-  const [walkinPayMethod, setWalkinPayMethod] = useState<"pay_link" | "cash">("pay_link");
+  const [walkInFirst, setWalkinFirst] = useState("");
+  const [walkInLast, setWalkinLast] = useState("");
+  const [walkInLicense, setWalkinLicense] = useState("");
+  const [walkInPayment, setWalkInPayment] = useState<"pay_link" | "cash">("pay_link");
   const [walkinNotes, setWalkinNotes] = useState("");
   const [attendance, setAttendance] = useState<Attendance[]>([]);
 
@@ -406,6 +409,11 @@ async function upsertRosterRowsForSession(sessionId: string, rows: RosterRow[]) 
     const lic = (u.user_metadata?.trec_license as string | undefined) || "";
     if (lic) setLicenseInput(normalizeLicense(lic));
 
+    const fn = (u.user_metadata?.first_name as string | undefined) || "";
+    const ln = (u.user_metadata?.last_name as string | undefined) || "";
+    if (fn) setFirstName(fn);
+    if (ln) setLastName(ln);
+
     const hs = (u.user_metadata?.headshot_path as string | undefined) || "";
     setHeadshotPath(hs);
     if (hs) await refreshHeadshotSignedUrl(hs);
@@ -431,6 +439,10 @@ async function upsertRosterRowsForSession(sessionId: string, rows: RosterRow[]) 
         setAuthed(true);
         setEmail(session.user.email || "");
         setAdminFromEmail(session.user.email || "");
+        const fn = (session.user.user_metadata?.first_name as string | undefined) || "";
+        const ln = (session.user.user_metadata?.last_name as string | undefined) || "";
+        if (fn) setFirstName(fn);
+        if (ln) setLastName(ln);
       }
     });
 
@@ -714,10 +726,14 @@ async function importRoster() {
     const lic = normalizeLicense(licenseInput);
     if (!isValidLicense(lic)) return setStatus("Enter full TREC license number like 123456-SA (suffix required: -SA, -B, or -BB).");
 
+    const fn = firstName.trim();
+    const ln = lastName.trim();
+    if (!fn || !ln) return setStatus("Enter first and last name (as shown on the TREC license).");
+
     const { error } = await supabase.auth.signUp({
       email: email.trim().toLowerCase(),
       password: password.trim(),
-      options: { data: { trec_license: lic } },
+      options: { data: { trec_license: lic, first_name: fn, last_name: ln } },
     });
     if (error) {
       setScanResult({ kind: "error", message: error.message });
@@ -1007,7 +1023,7 @@ async function importRoster() {
     }
 
     const tick = async () => {
-      if (!cameraOn) return;
+      if (!cameraOnRef.current) return;
       try {
         const raw = await scanOnce();
         if (raw) {
@@ -1143,13 +1159,25 @@ async function importRoster() {
             {!recoveryMode && (
               <div style={{ display: "grid", gap: 6 }}>
                 <label style={{ fontWeight: 800 }}>Password</label>
-                <input
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  type="password"
-                  placeholder="••••••••"
-                  style={{ height: 52, borderRadius: 14, border: "1px solid #1167b1", padding: "0 12px", fontSize: 16 }}
-                />
+                <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                  <input
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    type={showPassword ? "text" : "password"}
+                    autoComplete="current-password"
+                    placeholder=""
+                    style={{ flex: 1, height: 52, borderRadius: 14, border: "1px solid #1167b1", padding: "0 12px", fontSize: 16 }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((s) => !s)}
+                    style={{ height: 52, padding: "0 14px", borderRadius: 14, border: "1px solid #ddd", background: "#fff", fontWeight: 900 }}
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                    title={showPassword ? "Hide password" : "Show password"}
+                  >
+                    {showPassword ? "Hide" : "Show"}
+                  </button>
+                </div>
               </div>
             )}
 
@@ -1628,11 +1656,11 @@ async function importRoster() {
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                       <div>
                         <label>First name</label>
-                        <input value={walkinFirst} onChange={(e) => setWalkinFirst(e.target.value)} style={{ width: "100%", height: 46, borderRadius: 12, border: "1px solid #1167b1", padding: "0 12px" }} />
+                        <input value={walkInFirst} onChange={(e) => setWalkinFirst(e.target.value)} style={{ width: "100%", height: 46, borderRadius: 12, border: "1px solid #1167b1", padding: "0 12px" }} />
                       </div>
                       <div>
                         <label>Last name</label>
-                        <input value={walkinLast} onChange={(e) => setWalkinLast(e.target.value)} style={{ width: "100%", height: 46, borderRadius: 12, border: "1px solid #1167b1", padding: "0 12px" }} />
+                        <input value={walkInLast} onChange={(e) => setWalkinLast(e.target.value)} style={{ width: "100%", height: 46, borderRadius: 12, border: "1px solid #1167b1", padding: "0 12px" }} />
                       </div>
                     </div>
 
@@ -1640,7 +1668,7 @@ async function importRoster() {
                       <div>
                         <label>TREC license (include suffix)</label>
                         <input
-                          value={walkinLicense}
+                          value={walkInLicense}
                           onChange={(e) => setWalkinLicense(e.target.value)}
                           placeholder="123456-SA"
                           style={{ width: "100%", height: 46, borderRadius: 12, border: "1px solid #1167b1", padding: "0 12px" }}
@@ -1649,8 +1677,8 @@ async function importRoster() {
                       <div>
                         <label>Payment</label>
                         <select
-                          value={walkinPayMethod}
-                          onChange={(e) => setWalkinPayMethod(e.target.value as any)}
+                          value={walkInPayment}
+                          onChange={(e) => setWalkInPayment(e.target.value as any)}
                           style={{ width: "100%", height: 46, borderRadius: 12, border: "1px solid #1167b1", padding: "0 12px" }}
                         >
                           <option value="pay_link">Pay Link</option>

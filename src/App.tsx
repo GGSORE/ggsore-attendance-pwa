@@ -1082,8 +1082,8 @@ async function importRoster() {
           )}
         </div>
 
-        {status && (
-          <div style={{ background: "#187bcd", border: "1px solid #1167b1", borderRadius: 16, padding: 12, marginBottom: 12 }} aria-live="polite">
+        {status && (tab === "admin" || !status.toLowerCase().startsWith("roster loaded")) && (
+          <div style={{ background: "#fff", border: "1px solid #ddd", borderRadius: 16, padding: 12, marginBottom: 12, color: "#111", fontWeight: 800 }} aria-live="polite">
             {status}
           </div>
         )}
@@ -1091,9 +1091,27 @@ async function importRoster() {
         {/* =========================
            Auth / Profile
         ========================= */}
-        <div style={{ background: "#187bcd", border: "1px solid #1167b1", borderRadius: 16, padding: 16, marginBottom: 12 }}>
+        <div style={{ background: "#fff", border: "1px solid #ddd", borderRadius: 16, padding: 16, marginBottom: 12 }}>
           <div style={{ display: "grid", gap: 10 }}>
-            <div style={{ display: "grid", gap: 6 }}>
+            
+            {authed && !recoveryMode && (
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap", padding: 12, borderRadius: 14, border: "1px solid #ddd", background: "#fff", color: "#111", marginBottom: 12 }}>
+                <div>
+                  <div style={{ fontWeight: 900, fontSize: 16 }}>Welcome to class.</div>
+                  <div className="small" style={{ opacity: 0.85 }}>Signed in as <b>{email}</b>.</div>
+                </div>
+                <button
+                  onClick={logout}
+                  style={{ padding: "12px 16px", borderRadius: 12, border: "1px solid #8B0000", background: "#8B0000", color: "#fff", fontWeight: 900 }}
+                >
+                  Log out
+                </button>
+              </div>
+            )}
+
+            {!authed && (
+              <>
+<div style={{ display: "grid", gap: 6 }}>
               <label style={{ fontWeight: 800 }}>Email</label>
               <input
                 value={email}
@@ -1129,7 +1147,12 @@ async function importRoster() {
               />
             </div>
 
-            {recoveryMode ? (
+            
+              </>
+            )}
+
+
+{recoveryMode ? (
               <div style={{ borderTop: "1px solid #eee", paddingTop: 12, marginTop: 6 }}>
                 <div style={{ fontWeight: 900, marginBottom: 8 }}>Create New Password</div>
                 <input
@@ -1156,7 +1179,7 @@ async function importRoster() {
                   </button>
                   <button
                     onClick={() => setRecoveryMode(false)}
-                    style={{ padding: "12px 16px", borderRadius: 12, border: "1px solid #1167b1", background: "#187bcd", fontWeight: 900 }}
+                    style={{ padding: "12px 16px", borderRadius: 12, border: "1px solid #8B0000", background: "#8B0000", color: "#fff", fontWeight: 900 }}
                   >
                     Back to login
                   </button>
@@ -1174,13 +1197,13 @@ async function importRoster() {
                     </button>
                     <button
                       onClick={createAccount}
-                      style={{ padding: "12px 16px", borderRadius: 12, border: "1px solid #1167b1", background: "#187bcd", fontWeight: 900 }}
+                      style={{ padding: "12px 16px", borderRadius: 12, border: "1px solid #8B0000", background: "#8B0000", color: "#fff", fontWeight: 900 }}
                     >
                       Create Account
                     </button>
                     <button
                       onClick={forgotPassword}
-                      style={{ padding: "12px 16px", borderRadius: 12, border: "1px solid #1167b1", background: "#187bcd", fontWeight: 900 }}
+                      style={{ padding: "12px 16px", borderRadius: 12, border: "1px solid #8B0000", background: "#8B0000", color: "#fff", fontWeight: 900 }}
                     >
                       Forgot password
                     </button>
@@ -1188,7 +1211,7 @@ async function importRoster() {
                 ) : (
                   <button
                     onClick={logout}
-                    style={{ padding: "12px 16px", borderRadius: 12, border: "1px solid #1167b1", background: "#187bcd", fontWeight: 900 }}
+                    style={{ padding: "12px 16px", borderRadius: 12, border: "1px solid #8B0000", background: "#8B0000", color: "#fff", fontWeight: 900 }}
                   >
                     Log out
                   </button>
@@ -1211,7 +1234,7 @@ async function importRoster() {
         {tab === "student" && (
           <>
             {/* Headshot Upload */}
-            <div style={{ background: "#187bcd", border: "1px solid #1167b1", borderRadius: 16, padding: 16, marginBottom: 12 }}>
+            <div style={{ background: "#fff", border: "1px solid #ddd", borderRadius: 16, padding: 16, marginBottom: 12 }}>
               <div style={{ fontWeight: 900, fontSize: 16, marginBottom: 6 }}>Headshot</div>
               <div style={{ fontSize: 12, opacity: 0.85, marginBottom: 10 }}>
                 A clear headshot helps verify identity for CE attendance (no driver license uploads needed).
@@ -1297,7 +1320,7 @@ async function importRoster() {
             </div>
 
             {/* Student Scan Panel */}
-            <div style={{ background: "#187bcd", border: "1px solid #1167b1", borderRadius: 16, padding: 16 }}>
+            <div style={ background: "#fff", border: "1px solid #ddd", borderRadius: 16, padding: 16 }>
               <h3 style={{ marginTop: 0 }}>Check In / Check Out</h3>
 
               {!authed ? (
@@ -1436,7 +1459,7 @@ async function importRoster() {
            ADMIN TAB
         ========================= */}
         {tab === "admin" && canSeeAdminTab && (
-          <div style={{ background: "#187bcd", border: "1px solid #1167b1", borderRadius: 16, padding: 16 }}>
+          <div style={ background: "#fff", border: "1px solid #ddd", borderRadius: 16, padding: 16 }>
             <h2 style={{ marginTop: 0 }}>Admin / Instructor</h2>
           {adminStatus && (
             <div style={{ marginTop: 8, marginBottom: 8, padding: "10px 12px", borderRadius: 12, background: "#f1f5ff", border: "1px solid #1167b1", fontWeight: 800 }}>
@@ -1547,7 +1570,7 @@ async function importRoster() {
                   </div>
                 </div>
 
-                <div style={{ background: "#187bcd", border: "1px solid #1167b1", borderRadius: 16, padding: 16, marginBottom: 12 }}>
+                <div style={{ background: "#fff", border: "1px solid #ddd", borderRadius: 16, padding: 16, marginBottom: 12 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginBottom: 10 }}>
                     <div>
                       <div style={{ fontWeight: 900, fontSize: 16 }}>Roster Import (CSV)</div>
@@ -1576,7 +1599,7 @@ async function importRoster() {
                 </div>
 
 
-                <div style={{ background: "#187bcd", border: "1px solid #1167b1", borderRadius: 16, padding: 16, marginTop: 12 }}>
+                <div style={ background: "#fff", border: "1px solid #ddd", borderRadius: 16, padding: 16, marginTop: 12 }>
                   <div style={{ fontWeight: 900, fontSize: 16, marginBottom: 8 }}>Add Walk-In (paid at the door)</div>
                   <div className="small" style={{ opacity: 0.85, marginBottom: 10 }}>
                     Use this when someone registers at the door. Choose Pay Link or Cash, then add them to today’s roster.
@@ -1634,7 +1657,7 @@ async function importRoster() {
                 </div>
 
 
-                <div style={{ background: "#187bcd", border: "1px solid #1167b1", borderRadius: 16, padding: 16 }}>
+                <div style={ background: "#fff", border: "1px solid #ddd", borderRadius: 16, padding: 16 }>
                   <div style={{ fontWeight: 900, fontSize: 16, marginBottom: 8 }}>Attendance</div>
                   <div style={{ overflowX: "auto" }}>
                     
@@ -1713,14 +1736,14 @@ async function importRoster() {
                   style={{
                     padding: "6px 10px",
                     borderRadius: 10,
-                    border: "1px solid #1167b1",
-                    background: absentSet[lic] ? "#8B0000" : "#fff",
-                    color: absentSet[lic] ? "#fff" : "#111",
+                    border: "1px solid #d0efff",
+                    background: "#d0efff",
+                    color: "#000",
                     fontWeight: 800,
                     fontSize: 12,
                   }}
                 >
-                  {absentSet[lic] ? "Undo absent" : "Mark absent"}
+                  {absentSet[lic] ? "Undo Absent" : "Mark Absent"}
                 </button>
 
                 <button
@@ -1742,14 +1765,14 @@ async function importRoster() {
                   {!checkedIn ? (
                     <button
                       onClick={() => adminSetAttendance(lic, "checkin")}
-                      style={{ padding: "8px 10px", borderRadius: 12, border: "1px solid #1167b1", background: "#8B0000", color: "#fff", fontWeight: 800 }}
+                      style={{ padding: "8px 10px", borderRadius: 12, border: "1px solid #1167b1", background: "#1167b1", color: "#fff", fontWeight: 800 }}
                     >
                       Manual Check-In
                     </button>
                   ) : (
                     <button
                       onClick={() => adminSetAttendance(lic, "clear_checkin")}
-                      style={{ padding: "8px 10px", borderRadius: 12, border: "1px solid #1167b1", background: "#1167b1", fontWeight: 800 }}
+                      style={{ padding: "8px 10px", borderRadius: 12, border: "1px solid #1167b1", background: "#1167b1", color: "#fff", fontWeight: 800 }}
                     >
                       Undo Check-In
                     </button>
@@ -1758,14 +1781,14 @@ async function importRoster() {
                   {!checkedOut ? (
                     <button
                       onClick={() => adminSetAttendance(lic, "checkout")}
-                      style={{ padding: "8px 10px", borderRadius: 12, border: "1px solid #1167b1", background: "#8B0000", color: "#fff", fontWeight: 800 }}
+                      style={{ padding: "8px 10px", borderRadius: 12, border: "1px solid #1167b1", background: "#1167b1", color: "#fff", fontWeight: 800 }}
                     >
                       Manual Check-Out
                     </button>
                   ) : (
                     <button
                       onClick={() => adminSetAttendance(lic, "clear_checkout")}
-                      style={{ padding: "8px 10px", borderRadius: 12, border: "1px solid #1167b1", background: "#1167b1", fontWeight: 800 }}
+                      style={{ padding: "8px 10px", borderRadius: 12, border: "1px solid #1167b1", background: "#1167b1", color: "#fff", fontWeight: 800 }}
                     >
                       Undo Check-Out
                     </button>

@@ -280,51 +280,59 @@ export default function App() {
   }  // =========================
   // Roster headshot map (gg_profiles)
   // =========================
-  async function refreshRosterHeadshots(currentRoster: RosterRow[] = roster) {
+    async function refreshRosterHeadshots(currentRoster: RosterRow[] = roster) {
     if (!supabase) return;
-    const licenses = Array.from(
+
+    // Build unique list of valid licenses
+    const uniq = Array.from(
       new Set(
-        currentRoster
+        (currentRoster || [])
           .map((r) => normalizeLicense(r.trec_license))
-          .filter((lic) => isValidLicense(lic))
+          .filter((x) => isValidLicense(x))
       )
     );
 
-    if (!licenses.length) {
+    if (!uniq.length) {
       setRosterHeadshots({});
       return;
     }
 
+    // Source of truth: gg_headshots_map (license -> storage path)
     const { data, error } = await supabase
-      .from("gg_profiles")
+      .from("gg_headshots_map")
       .select("trec_license, headshot_path")
-      .in("trec_license", licenses);
+      .in("trec_license", uniq);
 
     if (error) {
-      // table may not exist yet
-      // don't block the UI; just clear
-      setRosterHeadshots({});
+      console.warn("refreshRosterHeadshots error:", error.message);
       return;
     }
 
     const rows = (data as any[]) || [];
-    const pairs = await Promise.all(
-      rows.map(async (r) => {
-        const lic = String(r.trec_license || "");
-        const path = String(r.headshot_path || "");
-        if (!lic || !path) return [lic, ""] as const;
-        const { data: sdata } = await supabase.storage
-          .from(HEADSHOT_BUCKET)
-          .createSignedUrl(path, 60 * 60); // 1 hour
-        return [lic, sdata?.signedUrl || ""] as const;
+    const pairs = rows
+      .map((r) => ({
+        lic: normalizeLicense(r.trec_license || ""),
+        path: (r.headshot_path as string | null) || "",
+      }))
+      .filter((x) => x.lic && x.path);
+
+    const out: Record<string, string> = {};
+
+    await Promise.all(
+      pairs.map(async ({ lic, path }) => {
+        try {
+          const { data: signed, error: sErr } = await supabase.storage
+            .from(HEADSHOT_BUCKET)
+            .createSignedUrl(path, 60 * 60 * 24 * 7); // 7 days
+
+          if (!sErr && signed?.signedUrl) out[lic] = signed.signedUrl;
+        } catch (e) {
+          // ignore individual failures
+        }
       })
     );
 
-    const map: Record<string, string> = {};
-    for (const [lic, url] of pairs) {
-      if (lic && url) map[lic] = url;
-    }
-    setRosterHeadshots(map);
+    setRosterHeadshots(out);
   }
 
 
@@ -1345,7 +1353,7 @@ async function importRoster() {
                   </div>
 
                   {/* Admin-only token paste fallback */}
-                  {isAdmin && (
+                  {isAdmin && tab === "admin" && (
                     <div style={{ marginTop: 12 }}>
                       <label style={{ fontWeight: 900 }}>QR Token (admin fallback)</label>
                       <textarea

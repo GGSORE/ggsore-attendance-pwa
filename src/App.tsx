@@ -44,6 +44,10 @@ type Attendance = {
   notes?: string;
 };
 
+function isoNow() {
+  return new Date().toISOString();
+}
+
 type DBSess = {
   id: string;
   title: string;
@@ -540,43 +544,48 @@ async function importRoster() {
 
   async function addWalkInToRoster() {
     setStatus("");
-    const lic = normalizeLicense(walkinLicense);
+
+    const lic = normalizeLicense(walkInLicense);
     if (!isValidLicense(lic)) {
-      return setStatus("Enter full TREC license like 123456-SA (suffix required: -SA, -B, or -BB).");
-    }
-    if (!walkinFirst.trim() || !walkinLast.trim()) {
-      return setStatus("Enter first and last name for the walk-in.");
+      return setStatus("Enter full TREC license like 123456-SA (suffix: -SA, -B, or -BB).");
     }
 
+    const fn = (walkInFirst || "").trim();
+    const ln = (walkInLast || "").trim();
+    if (!fn || !ln) return setStatus("Enter first and last name.");
+
+    const method = walkInPayment; // "paylink" | "cash"
+
+    // Build the roster row first so we can reuse it
+    const row: RosterRow = {
+      trec_license: lic,
+      first_name: fn,
+      last_name: ln,
+      notes: method === "cash" ? "Walk-in (Cash)" : "Walk-in (Pay Link)",
+    };
+
+    // Update local roster state
     setRoster((prev) => {
-      const existingIdx = prev.findIndex((x) => normalizeLicense(x.trec_license) === lic);
-      const row: RosterRow = {
-        trec_license: lic,
-        first_name: walkinFirst.trim(),
-        last_name: walkinLast.trim(),
-        notes: walkinNotes.trim(),
-        payment_method: walkinPayMethod,
-        is_walkin: true,
-      };
-
-      if (existingIdx >= 0) {
-        const next = [...prev];
-        next[existingIdx] = { ...next[existingIdx], ...row };
-        return next;
-      }
-      return [row, ...prev];
+      const exists = prev.some((r) => normalizeLicense(r.trec_license) === lic);
+      if (exists) return prev;
+      return [row, ...prev].sort((a, b) => (a.last_name || "").localeCompare(b.last_name || ""));
     });
 
-    if (activeSessionId) {
-      await adminSetAttendance(row.trec_license, "checkin");
+    // Ensure roster exists in Supabase for the active session
+    if (supabase && activeSessionId) {
+      await upsertRosterRowsForSession(activeSessionId, [row]);
+      await refreshRosterHeadshots(activeSessionId);
     }
 
-    setWalkinFirst("");
-    setWalkinLast("");
-    setWalkinLicense("");
-    setWalkinNotes("");
-    setWalkinPayMethod("pay_link");
-    setStatus("Walk-in added to roster.");
+    // Mark as PRESENT by default: create/refresh attendance row (notes store payment method)
+    await adminSetAttendance(lic, "checkin", "manual", method);
+
+    // clear form
+    setWalkInFirst("");
+    setWalkInLast("");
+    setWalkInLicense("");
+    setWalkInPayment("paylink");
+    setStatus("Walk-in added and checked in.");
   }
 
 

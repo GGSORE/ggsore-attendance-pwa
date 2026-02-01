@@ -267,6 +267,7 @@ async function upsertRosterRowsForSession(sessionId: string, rows: RosterRow[]) 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const scanTimerRef = useRef<number | null>(null);
   const [cameraOn, setCameraOn] = useState(false);
+  const cameraOnRef = useRef(false);
 
   // Headshot
   const [headshotPath, setHeadshotPath] = useState<string>("");
@@ -595,6 +596,8 @@ async function importRoster() {
   async function addWalkInToRoster() {
     setStatus("");
 
+    if (!activeSessionId) return setStatus("Open a class session first (Admin tab).");
+
     const lic = normalizeLicense(walkInLicense);
     if (!isValidLicense(lic)) {
       return setStatus("Enter full TREC license like 123456-SA (suffix: -SA, -B, or -BB).");
@@ -606,36 +609,50 @@ async function importRoster() {
 
     const method = walkInPayment; // "paylink" | "cash"
 
-    // Build the roster row first so we can reuse it
     const row: RosterRow = {
+      session_id: activeSessionId,
       trec_license: lic,
       first_name: fn,
       last_name: ln,
-      notes: method === "cash" ? "Walk-in (Cash)" : "Walk-in (Pay Link)",
+      paid: true,
+      payment_method: method === "cash" ? "cash" : "paylink",
+      note: "",
     };
 
-    // Update local roster state
-    setRoster((prev) => {
-      const exists = prev.some((r) => normalizeLicense(r.trec_license) === lic);
-      if (exists) return prev;
-      return [row, ...prev].sort((a, b) => (a.last_name || "").localeCompare(b.last_name || ""));
-    });
+    // Compute the next roster list (so we can persist + refresh headshots deterministically)
+    const exists = roster.some((r) => normalizeLicense(r.trec_license) === lic);
+    const nextRoster = exists
+      ? roster
+      : [row, ...roster].sort((a, b) =>
+          `${a.last_name} ${a.first_name}`.localeCompare(`${b.last_name} ${b.first_name}`)
+        );
 
-    // Ensure roster exists in Supabase for the active session
-    if (supabase && activeSessionId) {
-      await upsertRosterRowsForSession(activeSessionId, [row]);
-      await refreshRosterHeadshots(rowsNext);
+    setRoster(nextRoster);
+
+    // Persist roster to DB
+    if (supabase) {
+      const { error } = await supabase.from("gg_roster").upsert(row, {
+        onConflict: "session_id,trec_license",
+      });
+      if (error) {
+        console.error(error);
+        setStatus(error.message);
+        return;
+      }
+
+      // Default: walk-in is present (checked in now)
+      await adminSetAttendance(lic, "checkin");
     }
 
-    // Mark as PRESENT by default: create/refresh attendance row (notes store payment method)
-    await adminSetAttendance(lic, "checkin", "manual", method);
+    // Refresh headshots for the roster (walk-in won't have a headshot yet, but this keeps UI consistent)
+    await refreshRosterHeadshots(nextRoster);
 
-    // clear form
+    // Clear walk-in form
     setWalkInFirst("");
     setWalkInLast("");
     setWalkInLicense("");
-    setWalkInPayment("paylink");
-    setStatus("Walk-in added and checked in.");
+    setWalkInPayment("cash");
+    setStatus("Walk-in added.");
   }
 
 
@@ -914,6 +931,7 @@ async function importRoster() {
     stream?.getTracks().forEach((t) => t.stop());
     if (v) v.srcObject = null;
     setCameraOn(false);
+    cameraOnRef.current = false;
   }
 
   async function startCamera() {
@@ -929,6 +947,7 @@ async function importRoster() {
 
       // Show the preview panel
       setCameraOn(true);
+    cameraOnRef.current = true;
 
       // Wait for the <video> to mount
       await new Promise((r) => requestAnimationFrame(() => r(null)));

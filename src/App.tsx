@@ -252,10 +252,6 @@ async function upsertRosterRowsForSession(sessionId: string, rows: RosterRow[]) 
   await refreshRosterHeadshots(rows);
 }
 
-  const [walkInFirst, setWalkinFirst] = useState("");
-  const [walkInLast, setWalkinLast] = useState("");
-  const [walkInLicense, setWalkinLicense] = useState("");
-  const [walkInPayment, setWalkInPayment] = useState<"pay_link" | "cash">("pay_link");
   const [walkinNotes, setWalkinNotes] = useState("");
   const [attendance, setAttendance] = useState<Attendance[]>([]);
 
@@ -1656,11 +1652,11 @@ async function importRoster() {
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                       <div>
                         <label>First name</label>
-                        <input value={walkInFirst} onChange={(e) => setWalkinFirst(e.target.value)} style={{ width: "100%", height: 46, borderRadius: 12, border: "1px solid #1167b1", padding: "0 12px" }} />
+                        <input value={walkInFirst} onChange={(e) => setWalkInFirst(e.target.value)} style={{ width: "100%", height: 46, borderRadius: 12, border: "1px solid #1167b1", padding: "0 12px" }} />
                       </div>
                       <div>
                         <label>Last name</label>
-                        <input value={walkInLast} onChange={(e) => setWalkinLast(e.target.value)} style={{ width: "100%", height: 46, borderRadius: 12, border: "1px solid #1167b1", padding: "0 12px" }} />
+                        <input value={walkInLast} onChange={(e) => setWalkInLast(e.target.value)} style={{ width: "100%", height: 46, borderRadius: 12, border: "1px solid #1167b1", padding: "0 12px" }} />
                       </div>
                     </div>
 
@@ -1669,7 +1665,7 @@ async function importRoster() {
                         <label>TREC license (include suffix)</label>
                         <input
                           value={walkInLicense}
-                          onChange={(e) => setWalkinLicense(e.target.value)}
+                          onChange={(e) => setWalkInLicense(e.target.value)}
                           placeholder="123456-SA"
                           style={{ width: "100%", height: 46, borderRadius: 12, border: "1px solid #1167b1", padding: "0 12px" }}
                         />
@@ -1894,5 +1890,4 @@ async function importRoster() {
   );
 
 }
-
 

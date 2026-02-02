@@ -201,9 +201,9 @@ export default function App() {
   const [checkinQrUrl, setCheckinQrUrl] = useState("");
   const [checkoutQrUrl, setCheckoutQrUrl] = useState("");
 
-  const rosterTemplate = "trec_license,first_name,last_name
+  const rosterTemplate = `trec_license,first_name,last_name
 123456-SA,First,Last
-";
+`;
   const [rosterFile, setRosterFile] = useState<File | null>(null);
   const [roster, setRoster] = useState<RosterRow[]>([]);
 

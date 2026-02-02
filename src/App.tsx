@@ -17,6 +17,7 @@ const supabase =
 ========================= */
 const BRAND_RED = "#8B0000";
 const HEADSHOT_BUCKET = "gg-headshots";
+const ROSTER_TABLE = "gg_roster";
 // Official TREC rules landing page; section §535.65 includes the student identity requirement.
 const TREC_RULES_URL = "https://www.trec.texas.gov/agency-information/rules-and-laws/trec-rules";
 
@@ -200,7 +201,10 @@ export default function App() {
   const [checkinQrUrl, setCheckinQrUrl] = useState("");
   const [checkoutQrUrl, setCheckoutQrUrl] = useState("");
 
-  const [rosterCSV, setRosterCSV] = useState("trec_license,first_name,last_name,notes\n");
+  const rosterTemplate = "trec_license,first_name,last_name
+123456-SA,First,Last
+";
+  const [rosterFile, setRosterFile] = useState<File | null>(null);
   const [roster, setRoster] = useState<RosterRow[]>([]);
 
 const [adminStatus, setAdminStatus] = useState<string>("");
@@ -554,6 +558,13 @@ async function upsertRosterRowsForSession(sessionId: string, rows: RosterRow[]) 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeSessionId]);
 
+  useEffect(() => {
+    if (!activeSessionId) return;
+    if (!isAdmin) return;
+    loadRosterFromDb(activeSessionId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSessionId, isAdmin]);
+
   const activeSession = useMemo(
     () => sessions.find((s) => s.id === activeSessionId) || null,
     [sessions, activeSessionId]
@@ -581,27 +592,113 @@ async function upsertRosterRowsForSession(sessionId: string, rows: RosterRow[]) 
       const text = await file.text();
       // normalize line endings
       const normalized = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-      setRosterCSV(normalized);
-      setStatus(`CSV file loaded: ${file.name}. Tap “Load Roster” to import.`);
+setStatus(`CSV file loaded: ${file.name}. Tap “Load Roster” to import.`);
     } catch (e: any) {
       setStatus(e?.message || "Could not read the CSV file.");
     }
   }
 
-async function importRoster() {
-    try {
-      const r = csvToRoster(rosterCSV);
-      setRoster(r);
-      setRemovedSet({});
-      setAbsentSet({});
-      await refreshRosterHeadshots(r);
-      setStatus(`Roster loaded: ${r.length} student(s).`);
-    } catch (e: any) {
-      setStatus(e?.message || "Roster import failed. Check the CSV format.");
-    }
+
+async function loadRosterFromDb(sessionId: string) {
+  if (!supabase) return;
+  if (!sessionId) return;
+
+  const { data, error } = await supabase
+    .from("gg_roster")
+    .select("*")
+    .eq("session_id", sessionId);
+
+  if (error) {
+    console.error(error);
+    setStatus(`Roster load failed: ${error.message}`);
+    return;
   }
 
-  async function addWalkInToRoster() {
+  const rows = (data || []) as any[];
+  const normalized = rows
+    .filter((r) => r?.trec_license)
+    .map((r) => ({
+      trec_license: String(r.trec_license || ""),
+      first_name: String(r.first_name || ""),
+      last_name: String(r.last_name || ""),
+      payment_method: (String(r.payment_method || "pay_link") as "pay_link" | "cash"),    }));
+
+  setRoster(normalized);
+  // hydrate headshots
+  await refreshRosterHeadshots(normalized);
+  setRosterLoadedCount(normalized.length);
+}
+
+async function importRoster() {
+  setStatus("");
+  if (!rosterFile) return setStatus("Choose a CSV file first.");
+  if (!activeSessionId) return setStatus("Create/select a class session first.");
+  if (!supabase) return setStatus("Supabase is not connected.");
+
+  try {
+    const text = await rosterFile.text();
+    const lines = text
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter(Boolean);
+
+    if (lines.length < 2) return setStatus("CSV looks empty.");
+
+    // Header -> column index map (case-insensitive)
+    const header = lines[0].split(",").map((h) => h.trim().toLowerCase());
+    const idx = (name: string) => header.indexOf(name.toLowerCase());
+
+    const iLic = idx("trec_license");
+    const iFirst = idx("first_name");
+    const iLast = idx("last_name");
+    const iPay = idx("payment_method");
+    const iNote = idx("note");
+
+    if (iLic === -1) {
+      return setStatus('CSV must include a "trec_license" column.');
+    }
+
+    const parsed: RosterRow[] = [];
+    for (let i = 1; i < lines.length; i++) {
+      const cols = lines[i].split(",").map((c) => c.trim());
+      const lic = cols[iLic] || "";
+      if (!lic) continue;
+
+      parsed.push({
+        trec_license: normalizeLicense(lic),
+        first_name: iFirst >= 0 ? (cols[iFirst] || "") : "",
+        last_name: iLast >= 0 ? (cols[iLast] || "") : "",
+        payment_method: (iPay >= 0 ? (cols[iPay] || "pay_link") : "pay_link") as "pay_link" | "cash",      });
+    }
+
+    if (!parsed.length) return setStatus("No roster rows found.");
+
+    // Persist roster to Supabase so it survives reloads
+    const upsertRows = parsed.map((r) => ({
+      session_id: activeSessionId,
+      trec_license: r.trec_license,
+      first_name: r.first_name,
+      last_name: r.last_name,
+      payment_method: r.payment_method,    }));
+
+    const { error } = await supabase
+      .from("gg_roster")
+      .upsert(upsertRows, { onConflict: "session_id,trec_license" });
+
+    if (error) {
+      console.error(error);
+      return setStatus(`Roster save failed: ${error.message}`);
+    }
+
+    // Reload from DB (single source of truth)
+    await loadRosterFromDb(activeSessionId);
+    setStatus(`Roster saved: ${parsed.length} students.`);
+  } catch (err: any) {
+    console.error(err);
+    setStatus(`Roster import failed: ${err?.message || String(err)}`);
+  }
+}
+async function addWalkInToRoster() {
     setStatus("");
 
     if (!activeSessionId) return setStatus("Open a class session first (Admin tab).");
@@ -623,9 +720,7 @@ async function importRoster() {
       first_name: fn,
       last_name: ln,
       paid: true,
-      payment_method: method === "cash" ? "cash" : "paylink",
-      note: "",
-    };
+      payment_method: method === "cash" ? "cash" : "paylink",    };
 
     // Compute the next roster list (so we can persist + refresh headshots deterministically)
     const exists = roster.some((r) => normalizeLicense(r.trec_license) === lic);
@@ -639,7 +734,7 @@ async function importRoster() {
 
     // Persist roster to DB
     if (supabase) {
-      const { error } = await supabase.from("gg_roster").upsert(row, {
+      const { error } = await supabase.from(ROSTER_TABLE).upsert(row, {
         onConflict: "session_id,trec_license",
       });
       if (error) {
@@ -654,6 +749,7 @@ async function importRoster() {
 
     // Refresh headshots for the roster (walk-in won't have a headshot yet, but this keeps UI consistent)
     await refreshRosterHeadshots(nextRoster);
+    await loadRosterFromDb(activeSessionId);
 
     // Clear walk-in form
     setWalkInFirst("");

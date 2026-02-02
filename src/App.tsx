@@ -207,6 +207,10 @@ export default function App() {
   const [rosterFile, setRosterFile] = useState<File | null>(null);
   const [roster, setRoster] = useState<RosterRow[]>([]);
 
+  // UI helper: how many roster rows are currently loaded for the active session.
+  // (Fixes runtime error where setRosterLoadedCount was referenced but not defined.)
+  const [, setRosterLoadedCount] = useState<number>(0);
+
 const [adminStatus, setAdminStatus] = useState<string>("");
 
 // =========================

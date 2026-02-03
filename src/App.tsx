@@ -1,526 +1,484 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { supabase } from "./supabaseClient";
 
+/**
+ * ClassCheck Pro™ — GGSORE attendance/check-in app
+ *
+ * This file intentionally keeps student-facing messaging clean:
+ * - No "Status: Missing required fields..." banner on first load
+ * - Validation messages only appear after a submit attempt
+ * - Admin-only diagnostics are hidden unless the signed-in user is an admin
+ */
+
+type Mode = "login" | "create";
+
 type Profile = {
-  id: string;
+  user_id: string;
   email: string;
   first_name: string;
   middle_initial: string | null;
   last_name: string;
   trec_license: string;
+  created_at?: string;
+  updated_at?: string;
 };
 
 type SessionRow = {
   id: string;
   title: string;
-  starts_at: string; // ISO
-  ends_at: string;   // ISO
+  starts_at: string;
+  ends_at: string;
 };
 
-function nowIso() {
-  return new Date().toISOString();
+function normalizeEmail(email: string) {
+  return email.trim().toLowerCase();
 }
 
-function toLocal(dtIso: string) {
-  const d = new Date(dtIso);
-  return d.toLocaleString();
+function normalizeTrecLicense(raw: string) {
+  return raw.trim().toUpperCase();
 }
 
-async function getPublicHeadshotUrl(headshotPath: string) {
-  // bucket: headshots (PUBLIC), path like "headshots/1234567.jpg"
-  const { data } = supabase.storage.from("headshots").getPublicUrl(headshotPath);
-  return data.publicUrl;
+function isValidEmail(email: string) {
+  // simple + sufficient for UI validation
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+}
+
+function formatName(first: string, mi: string, last: string) {
+  const f = first.trim();
+  const m = mi.trim();
+  const l = last.trim();
+  return [f, m ? `${m}.` : "", l].filter(Boolean).join(" ");
 }
 
 export default function App() {
-  const [loading, setLoading] = useState(true);
+  const [mode, setMode] = useState<Mode>("login");
 
-  // auth
-  const [authEmail, setAuthEmail] = useState("");
-  const [authPassword, setAuthPassword] = useState("");
+  // Auth fields
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
 
-  // create account
-  const [createFirst, setCreateFirst] = useState("");
-  const [createMiddle, setCreateMiddle] = useState("");
-  const [createLast, setCreateLast] = useState("");
-  const [createTrec, setCreateTrec] = useState("");
+  // Create-account fields
+  const [firstName, setFirstName] = useState("");
+  const [middleInitial, setMiddleInitial] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [trecLicense, setTrecLicense] = useState("");
 
-  // signed-in user
+  // UI state
+  const [busy, setBusy] = useState(false);
+  const [submitAttempted, setSubmitAttempted] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [messageType, setMessageType] = useState<"error" | "success" | "info">("info");
+
+  // Signed-in user + admin
   const [userId, setUserId] = useState<string | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
-
-  // sessions/check-in
-  const [activeSessions, setActiveSessions] = useState<SessionRow[]>([]);
-  const [selectedSessionId, setSelectedSessionId] = useState<string>("");
-
-  // headshot
-  const [headshotUrl, setHeadshotUrl] = useState<string | null>(null);
-
-  // admin
   const [isAdmin, setIsAdmin] = useState(false);
-  const [newSessionTitle, setNewSessionTitle] = useState("");
-  const [newSessionStart, setNewSessionStart] = useState("");
-  const [newSessionEnd, setNewSessionEnd] = useState("");
 
-  const [headshotTrec, setHeadshotTrec] = useState("");
-  const [headshotFile, setHeadshotFile] = useState<File | null>(null);
+  // Data
+  const [sessions, setSessions] = useState<SessionRow[]>([]);
+  const [activeSessionId, setActiveSessionId] = useState<string>("");
 
-  const [status, setStatus] = useState<string>("");
+  const createErrors = useMemo(() => {
+    const errs: string[] = [];
+    const e = normalizeEmail(email);
+    const tl = normalizeTrecLicense(trecLicense);
 
-  const signedInName = useMemo(() => {
-    if (!profile) return "";
-    const mi = profile.middle_initial ? ` ${profile.middle_initial}.` : "";
-    return `${profile.first_name}${mi} ${profile.last_name}`.trim();
-  }, [profile]);
+    if (!e) errs.push("Email is required.");
+    else if (!isValidEmail(e)) errs.push("Enter a valid email address.");
 
-  async function refreshAuth() {
-    setLoading(true);
-    setStatus("");
+    if (!password) errs.push("Password is required.");
 
-    const { data: auth } = await supabase.auth.getUser();
-    const uid = auth.user?.id ?? null;
-    setUserId(uid);
+    if (!firstName.trim()) errs.push("First name is required.");
+    if (!lastName.trim()) errs.push("Last name is required.");
 
-    if (!uid) {
-      setProfile(null);
-      setIsAdmin(false);
-      setHeadshotUrl(null);
-      setActiveSessions([]);
-      setSelectedSessionId("");
-      setLoading(false);
-      return;
-    }
+    if (!tl) errs.push("TREC license is required.");
+    // Friendly nudge (not strict validation): suffix
+    // Students may include -SA / -B / -BB depending on license type.
+    // We don't hard-fail here, we just remind below.
 
-    // Profile
-    const { data: p, error: pErr } = await supabase
-      .from("gg_profiles")
-      .select("id,email,first_name,middle_initial,last_name,trec_license")
-      .eq("id", uid)
-      .maybeSingle();
+    return errs;
+  }, [email, password, firstName, lastName, trecLicense]);
 
-    if (pErr) {
-      setStatus(`Profile load error: ${pErr.message}`);
-      setProfile(null);
-    } else {
-      setProfile(p as Profile);
-    }
+  const loginErrors = useMemo(() => {
+    const errs: string[] = [];
+    const e = normalizeEmail(email);
 
-    // Admin check (RLS allows admins to read gg_admins)
-    const { data: a, error: aErr } = await supabase
-      .from("gg_admins")
-      .select("user_id")
-      .eq("user_id", uid)
-      .maybeSingle();
+    if (!e) errs.push("Email is required.");
+    else if (!isValidEmail(e)) errs.push("Enter a valid email address.");
+    if (!password) errs.push("Password is required.");
 
-    if (aErr) {
-      setIsAdmin(false);
-    } else {
-      setIsAdmin(!!a);
-    }
-
-    await loadActiveSessions();
-
-    // Headshot lookup
-    if (p && (p as Profile).trec_license) {
-      await loadHeadshot((p as Profile).trec_license);
-    } else {
-      setHeadshotUrl(null);
-    }
-
-    setLoading(false);
-  }
-
-  async function loadActiveSessions() {
-    const { data, error } = await supabase
-      .from("gg_sessions")
-      .select("id,title,starts_at,ends_at")
-      .gte("ends_at", nowIso())
-      .order("starts_at", { ascending: true });
-
-    if (error) {
-      setStatus(`Session load error: ${error.message}`);
-      setActiveSessions([]);
-      setSelectedSessionId("");
-      return;
-    }
-
-    const rows = (data ?? []) as SessionRow[];
-    setActiveSessions(rows);
-    setSelectedSessionId(rows.length > 0 ? rows[0].id : "");
-  }
-
-  async function loadHeadshot(trecLicense: string) {
-    const { data, error } = await supabase
-      .from("gg_headshots_map")
-      .select("headshot_path")
-      .eq("trec_license", trecLicense)
-      .maybeSingle();
-
-    if (error || !data?.headshot_path) {
-      setHeadshotUrl(null);
-      return;
-    }
-
-    const url = await getPublicHeadshotUrl(data.headshot_path);
-    setHeadshotUrl(url);
-  }
+    return errs;
+  }, [email, password]);
 
   useEffect(() => {
-    refreshAuth();
+    // Restore session + watch auth changes
+    let mounted = true;
 
-    const { data: sub } = supabase.auth.onAuthStateChange(() => {
-      refreshAuth();
+    (async () => {
+      const { data } = await supabase.auth.getSession();
+      if (!mounted) return;
+      const uid = data.session?.user?.id ?? null;
+      setUserId(uid);
+    })();
+
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      const uid = session?.user?.id ?? null;
+      setUserId(uid);
+      if (!uid) {
+        setProfile(null);
+        setIsAdmin(false);
+        setSessions([]);
+        setActiveSessionId("");
+      }
     });
 
     return () => {
+      mounted = false;
       sub.subscription.unsubscribe();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function signIn() {
-    setStatus("");
-    const { error } = await supabase.auth.signInWithPassword({
-      email: authEmail.trim(),
-      password: authPassword,
-    });
-    if (error) setStatus(error.message);
-  }
-
-  async function signOut() {
-    setStatus("");
-    await supabase.auth.signOut();
-  }
-
-  async function createAccount() {
-    setStatus("");
-
-    const email = authEmail.trim();
-    const password = authPassword;
-    const first = createFirst.trim();
-    const middle = createMiddle.trim();
-    const last = createLast.trim();
-    const trec = createTrec.trim();
-
-    if (!email || !password || !first || !last || !trec) {
-      setStatus("Missing required fields: email, password, first name, last name, TREC license.");
-      return;
-    }
-
-    const { data, error } = await supabase.auth.signUp({ email, password });
-
-    if (error) {
-      setStatus(error.message);
-      return;
-    }
-
-    const uid = data.user?.id;
-    if (!uid) {
-      setStatus("Account created, but user id was not returned. Try logging in.");
-      return;
-    }
-
-    const { error: insErr } = await supabase.from("gg_profiles").upsert({
-      id: uid,
-      email,
-      first_name: first,
-      middle_initial: middle ? middle.slice(0, 1).toUpperCase() : null,
-      last_name: last,
-      trec_license: trec,
-    });
-
-    if (insErr) {
-      setStatus(`Profile save error: ${insErr.message}`);
-      return;
-    }
-
-    setStatus("Account created. If email confirmation is enabled, confirm email then log in.");
-  }
-
-  async function checkIn() {
-    setStatus("");
+  useEffect(() => {
+    // When userId becomes available, fetch profile and admin status
     if (!userId) return;
 
-    if (!selectedSessionId) {
-      setStatus("No active session selected.");
-      return;
-    }
+    (async () => {
+      const { data: prof, error: pErr } = await supabase
+        .from("gg_profiles")
+        .select("user_id,email,first_name,middle_initial,last_name,trec_license,created_at,updated_at")
+        .eq("user_id", userId)
+        .maybeSingle();
 
-    const { error } = await supabase.from("gg_attendance").upsert({
-      session_id: selectedSessionId,
-      user_id: userId,
-      checked_in_at: nowIso(),
-    });
+      if (pErr) {
+        // keep student-facing clean; admin can inspect in console
+        console.error("Profile fetch error:", pErr);
+      }
+      setProfile(prof ?? null);
 
-    if (error) {
-      setStatus(`Check-in error: ${error.message}`);
-      return;
-    }
-    setStatus("Checked in ✅");
+      const { data: adminRow, error: aErr } = await supabase
+        .from("gg_admins")
+        .select("user_id")
+        .eq("user_id", userId)
+        .maybeSingle();
+
+      if (aErr) console.error("Admin check error:", aErr);
+      setIsAdmin(!!adminRow);
+
+      // Fetch sessions for all users (read-only)
+      const { data: sess, error: sErr } = await supabase
+        .from("gg_sessions")
+        .select("id,title,starts_at,ends_at")
+        .order("starts_at", { ascending: false });
+
+      if (sErr) console.error("Sessions fetch error:", sErr);
+      setSessions((sess ?? []) as SessionRow[]);
+      setActiveSessionId((sess?.[0]?.id as string) ?? "");
+    })();
+  }, [userId]);
+
+  function showMsg(type: "error" | "success" | "info", text: string) {
+    setMessageType(type);
+    setMessage(text);
   }
 
-  async function createSession() {
-    setStatus("");
+  async function handleLogin() {
+    setSubmitAttempted(true);
+    setMessage(null);
 
-    if (!newSessionTitle.trim() || !newSessionStart || !newSessionEnd) {
-      setStatus("Missing title/start/end.");
+    if (loginErrors.length) {
+      showMsg("error", loginErrors[0]);
       return;
     }
 
-    // IMPORTANT: datetime-local returns "YYYY-MM-DDTHH:mm"
-    // Supabase will coerce; for precise tz handling you can convert to ISO with timezone later.
-    const { error } = await supabase.from("gg_sessions").insert({
-      title: newSessionTitle.trim(),
-      starts_at: newSessionStart,
-      ends_at: newSessionEnd,
-    });
-
-    if (error) {
-      setStatus(`Create session error: ${error.message}`);
-      return;
-    }
-
-    setNewSessionTitle("");
-    setNewSessionStart("");
-    setNewSessionEnd("");
-    setStatus("Session created ✅");
-    await loadActiveSessions();
-  }
-
-  async function uploadHeadshot() {
-    setStatus("");
-
-    const trec = headshotTrec.trim();
-    if (!trec) {
-      setStatus("Missing TREC license.");
-      return;
-    }
-    if (!headshotFile) {
-      setStatus("Select an image file.");
-      return;
-    }
-
-    const ext = headshotFile.name.split(".").pop()?.toLowerCase() || "jpg";
-    const safeExt = ext.replace(/[^a-z0-9]/g, "") || "jpg";
-    const path = `headshots/${trec}.${safeExt}`;
-
-    const { error: upErr } = await supabase.storage
-      .from("headshots")
-      .upload(path, headshotFile, { upsert: true, contentType: headshotFile.type });
-
-    if (upErr) {
-      setStatus(`Storage upload error: ${upErr.message}`);
-      return;
-    }
-
-    const { error: mapErr } = await supabase.from("gg_headshots_map").upsert({
-      trec_license: trec,
-      headshot_path: path,
-      updated_at: nowIso(),
-    });
-
-    if (mapErr) {
-      setStatus(`Headshot map save error: ${mapErr.message}`);
-      return;
-    }
-
-    setStatus("Headshot uploaded + mapped ✅");
-    setHeadshotFile(null);
-
-    if (profile?.trec_license === trec) {
-      await loadHeadshot(trec);
+    setBusy(true);
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email: normalizeEmail(email),
+        password,
+      });
+      if (error) {
+        showMsg("error", error.message);
+        return;
+      }
+      showMsg("success", "Signed in.");
+    } finally {
+      setBusy(false);
     }
   }
 
-  if (loading) {
-    return (
-      <div className="container">
-        <div className="card">Loading…</div>
-      </div>
-    );
+  async function handleCreateAccount() {
+    setSubmitAttempted(true);
+    setMessage(null);
+
+    if (createErrors.length) {
+      showMsg("error", createErrors[0]);
+      return;
+    }
+
+    setBusy(true);
+    try {
+      const e = normalizeEmail(email);
+      const tl = normalizeTrecLicense(trecLicense);
+
+      const { data, error } = await supabase.auth.signUp({
+        email: e,
+        password,
+      });
+
+      if (error) {
+        showMsg("error", error.message);
+        return;
+      }
+
+      const uid = data.user?.id;
+      if (!uid) {
+        showMsg("error", "Account created, but user ID was not returned. Try logging in.");
+        return;
+      }
+
+      // Insert profile row
+      const { error: insErr } = await supabase.from("gg_profiles").insert([
+        {
+          user_id: uid,
+          email: e,
+          first_name: firstName.trim(),
+          middle_initial: middleInitial.trim() ? middleInitial.trim().toUpperCase() : null,
+          last_name: lastName.trim(),
+          trec_license: tl,
+        },
+      ]);
+
+      if (insErr) {
+        console.error("Profile insert error:", insErr);
+        showMsg("error", "Account created, but profile could not be saved. Contact the school for help.");
+        return;
+      }
+
+      showMsg("success", "Account created. If email confirmation is enabled, check inbox; otherwise, log in.");
+      // Optional: switch back to login mode for clarity
+      setMode("login");
+      setSubmitAttempted(false);
+    } finally {
+      setBusy(false);
+    }
   }
 
-  // Not signed in
-  if (!userId) {
-    return (
-      <div className="container">
-        <div className="card stack">
-          <h1>GGSORE Check-in</h1>
-          <div className="small">Login or create an account.</div>
-
-          <div className="row">
-            <div style={{ flex: 1, minWidth: 260 }}>
-              <label>Email</label>
-              <input value={authEmail} onChange={(e) => setAuthEmail(e.target.value)} />
-            </div>
-            <div style={{ flex: 1, minWidth: 260 }}>
-              <label>Password</label>
-              <input
-                type="password"
-                value={authPassword}
-                onChange={(e) => setAuthPassword(e.target.value)}
-              />
-            </div>
-          </div>
-
-          <div className="row">
-            <button onClick={signIn}>Login</button>
-            <button className="ghost" onClick={createAccount}>Create Account</button>
-          </div>
-
-          <div className="hr" />
-
-          <h2>Create Account Details</h2>
-          <div className="row">
-            <div style={{ flex: 1, minWidth: 220 }}>
-              <label>First Name</label>
-              <input value={createFirst} onChange={(e) => setCreateFirst(e.target.value)} />
-            </div>
-            <div style={{ width: 130 }}>
-              <label>M.I. (optional)</label>
-              <input
-                value={createMiddle}
-                onChange={(e) => setCreateMiddle(e.target.value)}
-                maxLength={1}
-              />
-            </div>
-            <div style={{ flex: 1, minWidth: 220 }}>
-              <label>Last Name</label>
-              <input value={createLast} onChange={(e) => setCreateLast(e.target.value)} />
-            </div>
-          </div>
-
-          <div className="row">
-            <div style={{ flex: 1, minWidth: 220 }}>
-              <label>TREC License</label>
-              <input value={createTrec} onChange={(e) => setCreateTrec(e.target.value)} />
-            </div>
-          </div>
-
-          {status && (
-            <div className="small">
-              <b>Status:</b> {status}
-            </div>
-          )}
-        </div>
-      </div>
-    );
+  async function handleLogout() {
+    setBusy(true);
+    try {
+      await supabase.auth.signOut();
+    } finally {
+      setBusy(false);
+    }
   }
 
-  // Signed in
+  const brandTitle = "ClassCheck Pro™";
+
   return (
-    <div className="container">
-      <div className="card stack">
-        <div className="row" style={{ justifyContent: "space-between" }}>
-          <div className="row">
-            {headshotUrl ? (
-              <img className="avatar" src={headshotUrl} alt="Headshot" />
-            ) : (
-              <div className="avatar" aria-label="No headshot" />
-            )}
-            <div>
-              <h1 style={{ marginBottom: 4 }}>Welcome, {signedInName || "Student"}</h1>
-              <div className="row">
-                {profile?.trec_license && <span className="badge">TREC: {profile.trec_license}</span>}
-                {isAdmin && <span className="badge">Admin</span>}
-              </div>
+    <div className="page">
+      <div className="card">
+        <header className="header">
+          <div className="brand">
+            <img
+              className="logo"
+              src="/classcheckpro-logo.png"
+              alt="ClassCheck Pro logo"
+              onError={(e) => {
+                // In case the logo file isn't uploaded yet
+                (e.currentTarget as HTMLImageElement).style.display = "none";
+              }}
+            />
+            <div className="brandText">
+              <h1>{brandTitle}</h1>
+              <p className="subtitle">Login or create an account.</p>
             </div>
           </div>
 
-          <button className="secondary" onClick={signOut}>Logout</button>
-        </div>
+          {userId && (
+            <button className="btn btn-secondary" onClick={handleLogout} disabled={busy}>
+              Logout
+            </button>
+          )}
+        </header>
 
-        <div className="hr" />
-
-        <h2>Student Check-in</h2>
-
-        <div className="row">
-          <div style={{ flex: 1, minWidth: 280 }}>
-            <label>Active Sessions</label>
-            <select value={selectedSessionId} onChange={(e) => setSelectedSessionId(e.target.value)}>
-              {activeSessions.length === 0 && <option value="">No active sessions</option>}
-              {activeSessions.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.title} • {toLocal(s.starts_at)} → {toLocal(s.ends_at)}
-                </option>
-              ))}
-            </select>
+        {/* Student-facing messages only (no debug/status spam) */}
+        {message && (
+          <div className={`notice ${messageType}`}>
+            {message}
           </div>
-          <div>
-            <label>&nbsp;</label>
-            <button onClick={checkIn} disabled={!selectedSessionId}>Check In</button>
-          </div>
-        </div>
+        )}
 
-        {isAdmin && (
+        {!userId ? (
           <>
-            <div className="hr" />
-            <h2>Admin</h2>
+            <div className="tabs">
+              <button
+                className={`tab ${mode === "login" ? "active" : ""}`}
+                onClick={() => {
+                  setMode("login");
+                  setSubmitAttempted(false);
+                  setMessage(null);
+                }}
+              >
+                Login
+              </button>
+              <button
+                className={`tab ${mode === "create" ? "active" : ""}`}
+                onClick={() => {
+                  setMode("create");
+                  setSubmitAttempted(false);
+                  setMessage(null);
+                }}
+              >
+                Create Account
+              </button>
+            </div>
 
-            <div className="card stack" style={{ borderRadius: 12, background: "#fbfbff" }}>
-              <h3>Create New Session</h3>
-              <div className="row">
-                <div style={{ flex: 1, minWidth: 260 }}>
-                  <label>Title</label>
-                  <input value={newSessionTitle} onChange={(e) => setNewSessionTitle(e.target.value)} />
-                </div>
+            <div className="grid2">
+              <div className="field">
+                <label>Email</label>
+                <input
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  autoComplete="email"
+                  placeholder="name@email.com"
+                />
               </div>
-              <div className="row">
-                <div style={{ flex: 1, minWidth: 260 }}>
-                  <label>Start</label>
-                  <input
-                    type="datetime-local"
-                    value={newSessionStart}
-                    onChange={(e) => setNewSessionStart(e.target.value)}
-                  />
-                </div>
-                <div style={{ flex: 1, minWidth: 260 }}>
-                  <label>End</label>
-                  <input
-                    type="datetime-local"
-                    value={newSessionEnd}
-                    onChange={(e) => setNewSessionEnd(e.target.value)}
-                  />
-                </div>
-              </div>
-              <button onClick={createSession}>Create Session</button>
-              <div className="small">
-                Tip: datetime-local saves without timezone. If needed, we can convert to ISO with timezone later.
+
+              <div className="field">
+                <label>Password</label>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  autoComplete={mode === "login" ? "current-password" : "new-password"}
+                  placeholder="••••••••"
+                />
               </div>
             </div>
 
-            <div className="card stack" style={{ borderRadius: 12, background: "#fbfbff" }}>
-              <h3>Headshots</h3>
-              <div className="small">
-                Uploads into Storage bucket <b>headshots</b> and writes <b>gg_headshots_map</b>.
-              </div>
+            <div className="actions">
+              {mode === "login" ? (
+                <button className="btn btn-primary" onClick={handleLogin} disabled={busy}>
+                  {busy ? "Signing in..." : "Login"}
+                </button>
+              ) : (
+                <button className="btn btn-primary" onClick={handleCreateAccount} disabled={busy}>
+                  {busy ? "Creating..." : "Create Account"}
+                </button>
+              )}
+            </div>
 
-              <div className="row">
-                <div style={{ flex: 1, minWidth: 220 }}>
+            {mode === "create" && (
+              <div className="section">
+                <h2>Create Account Details</h2>
+
+                <div className="helper">
+                  <p>
+                    <strong>Important:</strong> Enter the student name exactly as it appears on the TREC license.
+                  </p>
+                  <p>
+                    For the TREC license number, include the suffix if applicable: <strong>-SA</strong>, <strong>-B</strong>, or <strong>-BB</strong>.
+                  </p>
+                </div>
+
+                <div className="grid3">
+                  <div className="field">
+                    <label>First Name</label>
+                    <input value={firstName} onChange={(e) => setFirstName(e.target.value)} />
+                  </div>
+
+                  <div className="field">
+                    <label>M.I. (optional)</label>
+                    <input
+                      value={middleInitial}
+                      maxLength={1}
+                      onChange={(e) => setMiddleInitial(e.target.value)}
+                      placeholder="M"
+                    />
+                  </div>
+
+                  <div className="field">
+                    <label>Last Name</label>
+                    <input value={lastName} onChange={(e) => setLastName(e.target.value)} />
+                  </div>
+                </div>
+
+                <div className="field">
                   <label>TREC License</label>
-                  <input value={headshotTrec} onChange={(e) => setHeadshotTrec(e.target.value)} />
-                </div>
-                <div style={{ flex: 1, minWidth: 260 }}>
-                  <label>Image File</label>
                   <input
-                    type="file"
-                    accept="image/*"
-                    onChange={(e) => setHeadshotFile(e.target.files?.[0] ?? null)}
+                    value={trecLicense}
+                    onChange={(e) => setTrecLicense(e.target.value)}
+                    placeholder="123456-SA"
                   />
                 </div>
+
+                {submitAttempted && createErrors.length > 1 && (
+                  <div className="subtle">
+                    <ul>
+                      {createErrors.map((e) => (
+                        <li key={e}>{e}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+          </>
+        ) : (
+          <>
+            {/* Signed-in home */}
+            <div className="section">
+              <h2>Welcome{profile ? `, ${formatName(profile.first_name, profile.middle_initial ?? "", profile.last_name)}` : ""}.</h2>
+              <p className="muted">
+                Select a class session, then check in.
+              </p>
+
+              <div className="field">
+                <label>Class Session</label>
+                <select
+                  value={activeSessionId}
+                  onChange={(e) => setActiveSessionId(e.target.value)}
+                >
+                  {sessions.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.title} — {new Date(s.starts_at).toLocaleString()}
+                    </option>
+                  ))}
+                </select>
               </div>
 
-              <button onClick={uploadHeadshot}>Upload Headshot</button>
+              <div className="actions">
+                <button className="btn btn-primary" disabled={!activeSessionId}>
+                  Check In (next step)
+                </button>
+              </div>
             </div>
+
+            {isAdmin && (
+              <div className="section admin">
+                <h2>Instructor / Admin</h2>
+                <p className="muted">
+                  Admin tools are shown only to instructors/admin users.
+                </p>
+
+                <div className="subtle">
+                  <div><strong>User ID:</strong> {userId}</div>
+                  <div><strong>Email:</strong> {profile?.email ?? "—"}</div>
+                  <div><strong>TREC:</strong> {profile?.trec_license ?? "—"}</div>
+                </div>
+
+                <button className="btn btn-secondary" disabled>
+                  Create New Class Session (next step)
+                </button>
+              </div>
+            )}
           </>
         )}
-
-        {status && (
-          <div className="small">
-            <b>Status:</b> {status}
-          </div>
-        )}
       </div>
+
+      <footer className="footer">
+        <span className="muted">© {new Date().getFullYear()} ClassCheck Pro™</span>
+      </footer>
     </div>
   );
 }

@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { supabase } from "./supabaseClient";
 
 /**
- * ClassCheck Pro™ — GGSORE attendance/check-in app
+ * ClassCheck Pro<sup className="tm">™</sup> — GGSORE attendance/check-in app
  *
  * This file intentionally keeps student-facing messaging clean:
  * - No "Status: Missing required fields..." banner on first load
@@ -272,7 +272,7 @@ export default function App() {
     }
   }
 
-  const brandTitle = "ClassCheck Pro™";
+  const brandTitle = "ClassCheck Pro";
 
   return (
     <div className="page">
@@ -289,7 +289,7 @@ export default function App() {
               }}
             />
             <div className="brandText">
-              <h1>{brandTitle}</h1>
+              <h1>{brandTitle}<sup className="tm">™</sup></h1>
               <p className="subtitle">Login or create an account.</p>
             </div>
           </div>
@@ -374,10 +374,10 @@ export default function App() {
 
                 <div className="helper">
                   <p>
-                    <strong>Important:</strong> Enter the student name exactly as it appears on the TREC license.
+                    <strong>Important:</strong> Enter your name exactly as it appears on the TREC license, including middle initial.
                   </p>
                   <p>
-                    For the TREC license number, include the suffix if applicable: <strong>-SA</strong>, <strong>-B</strong>, or <strong>-BB</strong>.
+                    For the TREC license number, be sure to include the appropriate suffix: <strong>-SA</strong>, <strong>-B</strong>, or <strong>-BB</strong>.
                   </p>
                 </div>
 
@@ -477,7 +477,7 @@ export default function App() {
       </div>
 
       <footer className="footer">
-        <span className="muted">© {new Date().getFullYear()} ClassCheck Pro™</span>
+        <span className="muted">© {new Date().getFullYear()} ClassCheck Pro<sup className="tm">™</sup></span>
       </footer>
     </div>
   );

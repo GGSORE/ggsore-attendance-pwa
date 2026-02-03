@@ -1,84 +1,275 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { createClient } from "@supabase/supabase-js";
+import { createClient, SupabaseClient } from "@supabase/supabase-js";
+import "./styles.css";
 
-// -----------------------------
-// Supabase
-// -----------------------------
+/**
+ * ClassCheck Pro™ — single-file App.tsx
+ * Hotfix: define/own admin view state (prevents "adminTab is not defined")
+ * Also: no credential prefill, Century Gothic everywhere, student/admin separation.
+ */
+
+// ---------- Supabase ----------
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
-const ADMIN_EMAIL = (import.meta.env.VITE_ADMIN_EMAIL as string | undefined)?.toLowerCase();
+const adminEmailEnv = (import.meta.env.VITE_ADMIN_EMAIL as string | undefined) ?? "";
 
-const supabase =
-  supabaseUrl && supabaseAnonKey ? createClient(supabaseUrl, supabaseAnonKey) : null;
+function buildSupabase(): SupabaseClient | null {
+  if (!supabaseUrl || !supabaseAnonKey) return null;
+  return createClient(supabaseUrl, supabaseAnonKey);
+}
 
-// -----------------------------
-// Types
-// -----------------------------
+type View = "auth" | "app";
+type AuthTab = "login" | "create";
+type AppTab = "student" | "admin";
+
 type Profile = {
   id: string;
   email: string;
-  first_name: string;
+  first_name?: string | null;
   middle_initial?: string | null;
-  last_name: string;
-  trec_license: string;
+  last_name?: string | null;
+  trec_license?: string | null;
 };
 
-type ClassSession = {
+type SessionRow = {
   id: string;
   title: string;
-  start_time: string; // ISO
-  end_time: string;   // ISO
-  created_by: string;
+  start_time: string;
+  end_time: string;
+  created_at?: string;
 };
 
-// -----------------------------
-// Helpers
-// -----------------------------
-function cx(...parts: Array<string | false | null | undefined>) {
-  return parts.filter(Boolean).join(" ");
-}
+export default function App() {
+  const supabase = useMemo(() => buildSupabase(), []);
+  const [view, setView] = useState<View>("auth");
+  const [authTab, setAuthTab] = useState<AuthTab>("login");
 
-function formatLocal(dtIso: string) {
-  try {
-    const d = new Date(dtIso);
-    return d.toLocaleString();
-  } catch {
-    return dtIso;
-  }
-}
+  // HOTFIX: adminTab must exist (we use appTab, but this prevents undefined usage)
+  const [appTab, setAppTab] = useState<AppTab>("student");
 
-function isProbablyAdmin(email: string | null | undefined) {
-  if (!email) return false;
-  if (ADMIN_EMAIL && email.toLowerCase() === ADMIN_EMAIL) return true;
-  return false;
-}
+  // Auth fields (never prefilled)
+  const [email, setEmail] = useState<string>("");
+  const [password, setPassword] = useState<string>("");
 
-// -----------------------------
-// QR Scanner (no extra deps)
-// Uses BarcodeDetector when available (Chrome/Edge).
-// -----------------------------
-function QrScanner({
-  onResult,
-  onError,
-}: {
-  onResult: (text: string) => void;
-  onError?: (msg: string) => void;
-}) {
+  // Create Account fields
+  const [firstName, setFirstName] = useState<string>("");
+  const [middleInitial, setMiddleInitial] = useState<string>("");
+  const [lastName, setLastName] = useState<string>("");
+  const [trecLicense, setTrecLicense] = useState<string>("");
+
+  const [userProfile, setUserProfile] = useState<Profile | null>(null);
+  const [statusMsg, setStatusMsg] = useState<string>("");
+
+  // Check-in
+  const [manualQr, setManualQr] = useState<string>("");
+  const [scanSupported, setScanSupported] = useState<boolean>(false);
+  const [scanning, setScanning] = useState<boolean>(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const rafRef = useRef<number | null>(null);
+  const scanTimerRef = useRef<number | null>(null);
 
-  const [isRunning, setIsRunning] = useState(false);
-  const [supported, setSupported] = useState<boolean>(() => {
+  // Admin session creator
+  const [sessionTitle, setSessionTitle] = useState<string>("");
+  const [sessionStart, setSessionStart] = useState<string>("");
+  const [sessionEnd, setSessionEnd] = useState<string>("");
+  const [recentSessions, setRecentSessions] = useState<SessionRow[]>([]);
+
+  const isAdmin = useMemo(() => {
+    const e = (userProfile?.email ?? "").toLowerCase();
+    const adminE = adminEmailEnv.toLowerCase();
+    return !!e && !!adminE && e === adminE;
+  }, [userProfile?.email]);
+
+  // Detect basic QR capability (BarcodeDetector is the lightest option)
+  useEffect(() => {
     // @ts-ignore
-    return typeof window !== "undefined" && "BarcodeDetector" in window;
-  });
+    const hasBarcodeDetector = typeof window !== "undefined" && "BarcodeDetector" in window;
+    setScanSupported(!!hasBarcodeDetector && !!navigator.mediaDevices?.getUserMedia);
+  }, []);
 
-  const stop = async () => {
-    setIsRunning(false);
-    if (rafRef.current) cancelAnimationFrame(rafRef.current);
-    rafRef.current = null;
+  // On mount, check existing session
+  useEffect(() => {
+    if (!supabase) {
+      setStatusMsg("Missing Supabase env vars. Check Vercel env settings.");
+      return;
+    }
+    (async () => {
+      const { data } = await supabase.auth.getSession();
+      if (data.session?.user) {
+        await loadProfile(data.session.user.id, data.session.user.email ?? "");
+        setView("app");
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [supabase]);
 
+  async function loadProfile(userId: string, emailAddr: string) {
+    if (!supabase) return;
+    // Best-effort: profiles table commonly used; if not present, fallback to minimal profile
+    try {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("id,email,first_name,middle_initial,last_name,trec_license")
+        .eq("id", userId)
+        .maybeSingle();
+
+      if (error || !data) {
+        setUserProfile({ id: userId, email: emailAddr });
+        return;
+      }
+
+      setUserProfile({
+        id: data.id,
+        email: data.email ?? emailAddr,
+        first_name: data.first_name,
+        middle_initial: data.middle_initial,
+        last_name: data.last_name,
+        trec_license: data.trec_license,
+      });
+    } catch {
+      setUserProfile({ id: userId, email: emailAddr });
+    }
+  }
+
+  async function onLogin() {
+    setStatusMsg("");
+    if (!supabase) return;
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) throw error;
+      await loadProfile(data.user.id, data.user.email ?? "");
+      setView("app");
+      setAppTab("student");
+      setPassword(""); // do not retain
+    } catch (e: any) {
+      setStatusMsg(e?.message ?? "Login failed.");
+    }
+  }
+
+  async function onCreateAccount() {
+    setStatusMsg("");
+    if (!supabase) return;
+    try {
+      // Validate only on submit (no student-facing missing-field banner)
+      const missing: string[] = [];
+      if (!email) missing.push("email");
+      if (!password) missing.push("password");
+      if (!firstName) missing.push("first name");
+      if (!lastName) missing.push("last name");
+      if (!trecLicense) missing.push("TREC license");
+      if (missing.length) {
+        setStatusMsg(`Please complete: ${missing.join(", ")}.`);
+        return;
+      }
+
+      const { data, error } = await supabase.auth.signUp({ email, password });
+      if (error) throw error;
+
+      // Best-effort profile insert (non-fatal)
+      try {
+        await supabase.from("profiles").upsert({
+          id: data.user?.id,
+          email,
+          first_name: firstName,
+          middle_initial: middleInitial || null,
+          last_name: lastName,
+          trec_license: trecLicense,
+        });
+      } catch {
+        // ignore
+      }
+
+      if (data.user) {
+        await loadProfile(data.user.id, data.user.email ?? "");
+      }
+      setView("app");
+      setAppTab("student");
+      setPassword("");
+    } catch (e: any) {
+      setStatusMsg(e?.message ?? "Account creation failed.");
+    }
+  }
+
+  async function onSignOut() {
+    setStatusMsg("");
+    try {
+      if (supabase) await supabase.auth.signOut();
+    } finally {
+      setUserProfile(null);
+      setEmail("");
+      setPassword("");
+      setFirstName("");
+      setMiddleInitial("");
+      setLastName("");
+      setTrecLicense("");
+      setManualQr("");
+      stopScan();
+      setView("auth");
+      setAuthTab("login");
+    }
+  }
+
+  function welcomeName(): string {
+    const fn = (userProfile?.first_name ?? "").trim();
+    return fn ? `Welcome back, ${fn}!` : "Welcome back!";
+  }
+
+  // ---------- Scan (BarcodeDetector) ----------
+  async function startScan() {
+    setStatusMsg("");
+    if (!scanSupported) {
+      setStatusMsg("QR scanning isn’t supported in this browser. Use Manual Entry below.");
+      return;
+    }
+    setScanning(true);
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "environment" },
+        audio: false,
+      });
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+      }
+
+      // @ts-ignore
+      const detector = new window.BarcodeDetector({ formats: ["qr_code"] });
+
+      const tick = async () => {
+        if (!videoRef.current || !scanning) return;
+        try {
+          // @ts-ignore
+          const codes = await detector.detect(videoRef.current);
+          if (codes && codes.length) {
+            const raw = codes[0]?.rawValue ?? "";
+            if (raw) {
+              setManualQr(raw);
+              stopScan();
+              setStatusMsg("QR captured. Review and submit below.");
+              return;
+            }
+          }
+        } catch {
+          // keep trying
+        }
+        scanTimerRef.current = window.setTimeout(tick, 350);
+      };
+
+      scanTimerRef.current = window.setTimeout(tick, 350);
+    } catch (e: any) {
+      setScanning(false);
+      setStatusMsg(e?.message ?? "Unable to access camera.");
+    }
+  }
+
+  function stopScan() {
+    setScanning(false);
+    if (scanTimerRef.current) {
+      window.clearTimeout(scanTimerRef.current);
+      scanTimerRef.current = null;
+    }
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
@@ -86,669 +277,261 @@ function QrScanner({
     if (videoRef.current) {
       videoRef.current.srcObject = null;
     }
-  };
+  }
 
-  useEffect(() => {
-    return () => {
-      void stop();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const start = async () => {
-    if (!supported) {
-      onError?.("QR scanning isn't supported in this browser. Use Manual Entry below.");
+  async function submitCheckIn() {
+    setStatusMsg("");
+    if (!supabase) return;
+    if (!manualQr.trim()) {
+      setStatusMsg("Paste the QR value (or scan) before submitting.");
       return;
     }
     try {
-      // Prefer rear camera on mobile
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: "environment" } },
-        audio: false,
+      // Table name may vary; use "checkins" as default.
+      const { error } = await supabase.from("checkins").insert({
+        user_id: userProfile?.id,
+        qr_value: manualQr.trim(),
       });
-      streamRef.current = stream;
-
-      if (!videoRef.current) return;
-      videoRef.current.srcObject = stream;
-      await videoRef.current.play();
-
-      setIsRunning(true);
-
-      // @ts-ignore
-      const detector = new BarcodeDetector({ formats: ["qr_code"] });
-
-      const tick = async () => {
-        if (!videoRef.current) return;
-
-        try {
-          const barcodes = await detector.detect(videoRef.current);
-          if (barcodes?.length) {
-            const val = barcodes[0]?.rawValue || "";
-            if (val) {
-              onResult(val);
-              await stop();
-              return;
-            }
-          }
-        } catch (e) {
-          // If detect fails, keep trying but surface one-time hint
-        }
-        rafRef.current = requestAnimationFrame(tick);
-      };
-
-      rafRef.current = requestAnimationFrame(tick);
+      if (error) throw error;
+      setStatusMsg("✅ Check-in submitted!");
+      setManualQr("");
     } catch (e: any) {
-      onError?.(e?.message || "Camera permission failed. Use Manual Entry below.");
-      await stop();
+      setStatusMsg(e?.message ?? "Check-in failed (table/permissions may need setup).");
     }
-  };
+  }
 
-  return (
-    <div className="scannerWrap">
-      <div className="scannerHeader">
-        <div className="scannerTitle">Scan QR Code</div>
-        <div className="scannerActions">
-          {!isRunning ? (
-            <button className="btnSecondary" type="button" onClick={() => void start()}>
-              Start Scan
-            </button>
-          ) : (
-            <button className="btnSecondary" type="button" onClick={() => void stop()}>
-              Stop
-            </button>
-          )}
-        </div>
-      </div>
-
-      <div className="scannerBox">
-        <video ref={videoRef} className="scannerVideo" playsInline muted />
-        {!supported ? (
-          <div className="scannerHint">
-            QR scanning isn’t supported in this browser. Use Manual Entry below.
-          </div>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
-// -----------------------------
-// App
-// -----------------------------
-export default function App() {
-  const [fatalConfigError, setFatalConfigError] = useState<string | null>(null);
-
-  const [mode, setMode] = useState<"login" | "create">("login");
-
-  // Auth inputs
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-
-  // Create account inputs
-  const [firstName, setFirstName] = useState("");
-  const [middleInitial, setMiddleInitial] = useState("");
-  const [lastName, setLastName] = useState("");
-  const [trecLicense, setTrecLicense] = useState("");
-
-  // Auth state
-  const [sessionEmail, setSessionEmail] = useState<string | null>(null);
-  const [userId, setUserId] = useState<string | null>(null);
-  const [profile, setProfile] = useState<Profile | null>(null);
-
-  // UI messaging
-  const [authError, setAuthError] = useState<string | null>(null);
-  const [authSuccess, setAuthSuccess] = useState<string | null>(null);
-
-  // Admin / sessions
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [sessions, setSessions] = useState<ClassSession[]>([]);
-  const [newSessionTitle, setNewSessionTitle] = useState("");
-  const [newSessionStart, setNewSessionStart] = useState("");
-  const [newSessionEnd, setNewSessionEnd] = useState("");
-
-  // Check-in scanning (everyone)
-  const [scanValue, setScanValue] = useState("");
-  const [scanMsg, setScanMsg] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!supabase) {
-      setFatalConfigError(
-        "Missing Supabase environment variables. Check VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in Vercel."
-      );
-      return;
-    }
-
-    // Load existing session
-    void (async () => {
-      const { data } = await supabase.auth.getSession();
-      const u = data?.session?.user;
-      if (u?.id) {
-        setUserId(u.id);
-        setSessionEmail(u.email ?? null);
-        setIsAdmin(isProbablyAdmin(u.email));
-      }
-    })();
-
-    // Listen for auth changes
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, sess) => {
-      const u = sess?.user;
-      setUserId(u?.id ?? null);
-      setSessionEmail(u?.email ?? null);
-      setIsAdmin(isProbablyAdmin(u?.email));
-    });
-
-    return () => {
-      sub.subscription.unsubscribe();
-    };
-  }, []);
-
-  const showStudentLanding = useMemo(() => {
-    return !!userId && !isAdmin;
-  }, [userId, isAdmin]);
-
-  const showAdminLanding = useMemo(() => {
-    return !!userId && isAdmin;
-  }, [userId, isAdmin]);
-
-  // Load profile + sessions after login
-  useEffect(() => {
-    if (!supabase || !userId) return;
-
-    void (async () => {
-      // Profile
-      const { data: p, error: pErr } = await supabase
-        .from("profiles")
-        .select("id,email,first_name,middle_initial,last_name,trec_license")
-        .eq("id", userId)
-        .maybeSingle();
-
-      if (!pErr && p) setProfile(p as Profile);
-
-      // Sessions (for admins and for viewing list)
-      const { data: s, error: sErr } = await supabase
+  // ---------- Admin ----------
+  async function loadRecentSessions() {
+    if (!supabase) return;
+    try {
+      const { data, error } = await supabase
         .from("class_sessions")
-        .select("id,title,start_time,end_time,created_by")
-        .order("start_time", { ascending: false });
+        .select("id,title,start_time,end_time,created_at")
+        .order("created_at", { ascending: false })
+        .limit(10);
+      if (error) throw error;
+      setRecentSessions((data as any) ?? []);
+    } catch {
+      setRecentSessions([]);
+    }
+  }
 
-      if (!sErr && s) setSessions(s as ClassSession[]);
-    })();
-  }, [userId]);
+  useEffect(() => {
+    if (view === "app" && isAdmin && appTab === "admin") {
+      loadRecentSessions();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, isAdmin, appTab]);
 
-  // -----------------------------
-  // Auth actions
-  // -----------------------------
-  async function signIn(e: React.FormEvent) {
-    e.preventDefault();
-    setAuthError(null);
-    setAuthSuccess(null);
-
+  async function createSession() {
+    setStatusMsg("");
     if (!supabase) return;
-    if (!email.trim() || !password) {
-      setAuthError("Email and password are required.");
+    if (!sessionTitle.trim() || !sessionStart || !sessionEnd) {
+      setStatusMsg("Please provide a session title, start time, and end time.");
       return;
     }
-
-    const { error } = await supabase.auth.signInWithPassword({
-      email: email.trim(),
-      password,
-    });
-
-    if (error) {
-      setAuthError(error.message);
-      return;
+    try {
+      const { error } = await supabase.from("class_sessions").insert({
+        title: sessionTitle.trim(),
+        start_time: new Date(sessionStart).toISOString(),
+        end_time: new Date(sessionEnd).toISOString(),
+        created_by: userProfile?.id,
+      });
+      if (error) throw error;
+      setStatusMsg("✅ Class session created.");
+      setSessionTitle("");
+      setSessionStart("");
+      setSessionEnd("");
+      await loadRecentSessions();
+    } catch (e: any) {
+      setStatusMsg(e?.message ?? "Session creation failed (table/permissions may need setup).");
     }
-
-    setAuthSuccess("Welcome back!");
-    setPassword("");
   }
 
-  async function signUp(e: React.FormEvent) {
-    e.preventDefault();
-    setAuthError(null);
-    setAuthSuccess(null);
-
-    if (!supabase) return;
-
-    // Validate only on submit (no student-facing "status" while typing)
-    const missing: string[] = [];
-    if (!email.trim()) missing.push("email");
-    if (!password) missing.push("password");
-    if (!firstName.trim()) missing.push("first name");
-    if (!lastName.trim()) missing.push("last name");
-    if (!trecLicense.trim()) missing.push("TREC license");
-
-    if (missing.length) {
-      setAuthError(`Missing required fields: ${missing.join(", ")}.`);
-      return;
-    }
-
-    const cleanMi = middleInitial.trim().slice(0, 1).toUpperCase();
-    const cleanLicense = trecLicense.trim().toUpperCase();
-
-    const { data, error } = await supabase.auth.signUp({
-      email: email.trim(),
-      password,
-      options: {
-        data: {
-          first_name: firstName.trim(),
-          middle_initial: cleanMi || null,
-          last_name: lastName.trim(),
-          trec_license: cleanLicense,
-        },
-      },
-    });
-
-    if (error) {
-      setAuthError(error.message);
-      return;
-    }
-
-    if (data?.user?.id) {
-      // Ensure profile row exists (depends on your trigger; safe to upsert)
-      await supabase
-        .from("profiles")
-        .upsert(
-          {
-            id: data.user.id,
-            email: email.trim(),
-            first_name: firstName.trim(),
-            middle_initial: cleanMi || null,
-            last_name: lastName.trim(),
-            trec_license: cleanLicense,
-          },
-          { onConflict: "id" }
-        );
-    }
-
-    setAuthSuccess("Account created. Check email for confirmation if required.");
-    setPassword("");
-    // Keep them on create mode so they can confirm they created it
-  }
-
-  async function signOut() {
-    if (!supabase) return;
-    await supabase.auth.signOut();
-    setProfile(null);
-    setSessions([]);
-    setScanValue("");
-    setScanMsg(null);
-    setAuthError(null);
-    setAuthSuccess(null);
-  }
-
-  // -----------------------------
-  // Admin actions
-  // -----------------------------
-  async function createSession(e: React.FormEvent) {
-    e.preventDefault();
-    if (!supabase || !userId) return;
-
-    setAuthError(null);
-    setAuthSuccess(null);
-
-    if (!newSessionTitle.trim() || !newSessionStart || !newSessionEnd) {
-      setAuthError("Session title, start time, and end time are required.");
-      return;
-    }
-
-    const { error } = await supabase.from("class_sessions").insert({
-      title: newSessionTitle.trim(),
-      start_time: new Date(newSessionStart).toISOString(),
-      end_time: new Date(newSessionEnd).toISOString(),
-      created_by: userId,
-    });
-
-    if (error) {
-      setAuthError(error.message);
-      return;
-    }
-
-    setAuthSuccess("Class session created.");
-    setNewSessionTitle("");
-    setNewSessionStart("");
-    setNewSessionEnd("");
-
-    const { data: s } = await supabase
-      .from("class_sessions")
-      .select("id,title,start_time,end_time,created_by")
-      .order("start_time", { ascending: false });
-
-    if (s) setSessions(s as ClassSession[]);
-  }
-
-  // -----------------------------
-  // Check-in actions (stub for now)
-  // -----------------------------
-  function onScanResult(text: string) {
-    setScanValue(text);
-    setScanMsg("Scan captured. Review and submit below.");
-  }
-
-  async function submitScan(e: React.FormEvent) {
-    e.preventDefault();
-    setScanMsg(null);
-
-    if (!scanValue.trim()) {
-      setScanMsg("Nothing to submit yet—scan a QR code or paste it in Manual Entry.");
-      return;
-    }
-
-    // NOTE: actual attendance write will be added next (after we confirm QR format)
-    setScanMsg("Captured! Next step is wiring this value to attendance records.");
-  }
-
-  // -----------------------------
-  // Render
-  // -----------------------------
-  if (fatalConfigError) {
-    return (
-      <div className="page">
-        <div className="card">
-          <h1 className="title">ClassCheck Pro™</h1>
-          <p className="muted">{fatalConfigError}</p>
-        </div>
-      </div>
-    );
-  }
-
+  // ---------- Render ----------
   return (
     <div className="page">
       <div className="card">
-        <header className="brandHeader">
-          <img
-            src="/classcheckpro-logo.png"
-            alt="ClassCheck Pro™"
-            className="brandLogoWide"
-          />
+        <header className="header">
+          <img className="brandLogo" src="/classcheckpro-logo.png" alt="ClassCheck Pro™" draggable={false} />
         </header>
 
-        {!userId ? (
+        {view === "auth" ? (
           <>
-            <div className="subTitle">Login or create an account.</div>
+            <div className="subhead">Login or create an account.</div>
 
-            <div className="segmented">
-              <button
-                type="button"
-                className={cx("segBtn", mode === "login" && "segBtnActive")}
-                onClick={() => {
-                  setMode("login");
-                  setAuthError(null);
-                  setAuthSuccess(null);
-                }}
-              >
+            <div className="tabRow">
+              <button type="button" className={"tabBtn" + (authTab === "login" ? " tabBtnActive" : "")} onClick={() => setAuthTab("login")}>
                 Login
               </button>
-              <button
-                type="button"
-                className={cx("segBtn", mode === "create" && "segBtnActive")}
-                onClick={() => {
-                  setMode("create");
-                  setAuthError(null);
-                  setAuthSuccess(null);
-                }}
-              >
+              <button type="button" className={"tabBtn" + (authTab === "create" ? " tabBtnActive" : "")} onClick={() => setAuthTab("create")}>
                 Create Account
               </button>
             </div>
 
-            {/* Messages */}
-            {authError ? <div className="alert alertError">{authError}</div> : null}
-            {authSuccess ? <div className="alert alertOk">{authSuccess}</div> : null}
-
-            {/* Auth form */}
-            <form
-              className="form"
-              onSubmit={mode === "login" ? signIn : signUp}
-              autoComplete="off"
-            >
-              <div className="grid2">
-                <div className="field">
-                  <label>Email</label>
-                  <input
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    type="email"
-                    autoComplete="off"
-                    spellCheck={false}
-                  />
-                </div>
-
-                <div className="field">
-                  <label>Password</label>
-                  <input
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    type="password"
-                    autoComplete={mode === "create" ? "new-password" : "off"}
-                  />
-                </div>
+            <div className="grid2">
+              <div>
+                <label className="label">Email</label>
+                <input className="input" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="off" inputMode="email" placeholder="name@example.com" />
               </div>
+              <div>
+                <label className="label">Password</label>
+                <input className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" placeholder="••••••••" />
+              </div>
+            </div>
 
-              <div className="actionsRow">
-                <button className="btnPrimary" type="submit">
-                  {mode === "login" ? "Login" : "Create Account"}
+            {authTab === "login" ? (
+              <div className="actions">
+                <button type="button" className="btnPrimary" onClick={onLogin}>
+                  Login
                 </button>
               </div>
+            ) : (
+              <>
+                <div className="sectionTitle">Create Account Details</div>
 
-              {mode === "create" ? (
-                <>
-                  <hr className="divider" />
+                <div className="noteBox">
+                  <strong>Important:</strong> Enter your name exactly as it appears on your TREC license, including middle initial.
+                  <br />
+                  For the TREC license number, be sure to include the appropriate suffix: -SA, -B, or -BB.
+                </div>
 
-                  <h2 className="sectionTitle">Create Account Details</h2>
-
-                  <div className="infoBox">
-                    <strong>Important:</strong> Enter your name exactly as it appears on
-                    your TREC license, including middle initial.
-                    <br />
-                    For the TREC license number, be sure to include the appropriate
-                    suffix: -SA, -B, or -BB.
+                <div className="grid3">
+                  <div>
+                    <label className="label">First Name</label>
+                    <input className="input" value={firstName} onChange={(e) => setFirstName(e.target.value)} autoComplete="off" />
                   </div>
-
-                  <div className="grid3">
-                    <div className="field">
-                      <label>First Name</label>
-                      <input
-                        value={firstName}
-                        onChange={(e) => setFirstName(e.target.value)}
-                        type="text"
-                        autoComplete="off"
-                      />
-                    </div>
-
-                    <div className="field">
-                      <label>M.I. (optional)</label>
-                      <input
-                        value={middleInitial}
-                        onChange={(e) => setMiddleInitial(e.target.value)}
-                        type="text"
-                        maxLength={1}
-                        autoComplete="off"
-                      />
-                    </div>
-
-                    <div className="field">
-                      <label>Last Name</label>
-                      <input
-                        value={lastName}
-                        onChange={(e) => setLastName(e.target.value)}
-                        type="text"
-                        autoComplete="off"
-                      />
-                    </div>
+                  <div>
+                    <label className="label">M.I. (optional)</label>
+                    <input className="input" value={middleInitial} onChange={(e) => setMiddleInitial(e.target.value)} maxLength={1} autoComplete="off" />
                   </div>
-
-                  <div className="field">
-                    <label>TREC License</label>
-                    <input
-                      value={trecLicense}
-                      onChange={(e) => setTrecLicense(e.target.value)}
-                      type="text"
-                      placeholder="123456-SA"
-                      autoComplete="off"
-                    />
+                  <div>
+                    <label className="label">Last Name</label>
+                    <input className="input" value={lastName} onChange={(e) => setLastName(e.target.value)} autoComplete="off" />
                   </div>
-                </>
-              ) : null}
-            </form>
+                </div>
+
+                <div className="grid1">
+                  <div>
+                    <label className="label">TREC License</label>
+                    <input className="input" value={trecLicense} onChange={(e) => setTrecLicense(e.target.value)} autoComplete="off" placeholder="123456-SA" />
+                  </div>
+                </div>
+
+                <div className="actions">
+                  <button type="button" className="btnPrimary" onClick={onCreateAccount}>
+                    Create Account
+                  </button>
+                </div>
+              </>
+            )}
+
+            {statusMsg ? <div className="status">{statusMsg}</div> : null}
           </>
         ) : (
           <>
-            <div className="topBar">
-              <div className="welcome">
-                {/* Choice B */}
-                <div className="welcomeTitle">
-                  Welcome back{profile?.first_name ? `, ${profile.first_name}` : ""}!
-                </div>
-                <div className="mutedSmall">{sessionEmail ?? ""}</div>
+            <div className="topRow">
+              <div>
+                <div className="welcome">{welcomeName()}</div>
+                <div className="muted">{userProfile?.email}</div>
               </div>
-
               <div className="topActions">
-                <button className="btnSecondary" type="button" onClick={() => void signOut()}>
+                {isAdmin ? (
+                  <>
+                    <button type="button" className={"tabBtn small" + (appTab === "student" ? " tabBtnActive" : "")} onClick={() => setAppTab("student")}>
+                      Student
+                    </button>
+                    <button type="button" className={"tabBtn small" + (appTab === "admin" ? " tabBtnActive" : "")} onClick={() => setAppTab("admin")}>
+                      Admin / Instructor
+                    </button>
+                  </>
+                ) : null}
+                <button type="button" className="btnOutline" onClick={onSignOut}>
                   Sign out
                 </button>
               </div>
             </div>
 
-            <hr className="divider" />
-
-            {isAdmin ? (
-              <div className="tabRow">
-                <button
-                  type="button"
-                  className={
-                    adminTab === "checkin"
-                      ? "btnSecondary btnSecondaryActive"
-                      : "btnSecondary"
-                  }
-                  onClick={() => setAdminTab("checkin")}
-                >
-                  Check-In
-                </button>
-                <button
-                  type="button"
-                  className={
-                    adminTab === "admin"
-                      ? "btnSecondary btnSecondaryActive"
-                      : "btnSecondary"
-                  }
-                  onClick={() => setAdminTab("admin")}
-                >
-                  Admin / Instructor
-                </button>
-              </div>
-            ) : null}
-
-            {/* Student check-in tools */}
-            {(!isAdmin || adminTab === "checkin") ? (<>
-            <h2 className="sectionTitle">Check-In</h2>
-
-            {scanMsg ? <div className="alert alertOk">{scanMsg}</div> : null}
-
-            <QrScanner
-              onResult={onScanResult}
-              onError={(m) => setScanMsg(m)}
-            />
-
-            <form className="form" onSubmit={submitScan}>
-              <div className="field">
-                <label>Manual Entry</label>
-                <input
-                  value={scanValue}
-                  onChange={(e) => setScanValue(e.target.value)}
-                  type="text"
-                  placeholder="Paste the QR value here (if needed)"
-                  autoComplete="off"
-                />
-              </div>
-
-              <div className="actionsRow">
-                <button className="btnPrimary" type="submit">
-                  Submit Check-In
-                </button>
-              </div>
-            </form>
-
-            </>
-            ) : null}
-
-            {/* Admin panel */}
-            {isAdmin && adminTab === "admin" ? (
+            {appTab === "student" ? (
               <>
-                <hr className="divider" />
-                <h2 className="sectionTitle">Admin / Instructor</h2>
+                <div className="sectionTitle">Check-In</div>
 
-                <form className="form" onSubmit={createSession}>
-                  <div className="field">
-                    <label>Session Title</label>
-                    <input
-                      value={newSessionTitle}
-                      onChange={(e) => setNewSessionTitle(e.target.value)}
-                      type="text"
-                      autoComplete="off"
-                    />
-                  </div>
-
-                  <div className="grid2">
-                    <div className="field">
-                      <label>Start Time</label>
-                      <input
-                        value={newSessionStart}
-                        onChange={(e) => setNewSessionStart(e.target.value)}
-                        type="datetime-local"
-                      />
-                    </div>
-
-                    <div className="field">
-                      <label>End Time</label>
-                      <input
-                        value={newSessionEnd}
-                        onChange={(e) => setNewSessionEnd(e.target.value)}
-                        type="datetime-local"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="actionsRow">
-                    <button className="btnPrimary" type="submit">
-                      Create New Class Session
-                    </button>
-                  </div>
-                </form>
-
-                <div className="tableWrap">
-                  <div className="tableTitle">Recent Sessions</div>
-                  <table className="table">
-                    <thead>
-                      <tr>
-                        <th>Title</th>
-                        <th>Start</th>
-                        <th>End</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {sessions.map((s) => (
-                        <tr key={s.id}>
-                          <td>{s.title}</td>
-                          <td>{formatLocal(s.start_time)}</td>
-                          <td>{formatLocal(s.end_time)}</td>
-                        </tr>
-                      ))}
-                      {!sessions.length ? (
-                        <tr>
-                          <td colSpan={3} className="mutedSmall">
-                            No sessions yet.
-                          </td>
-                        </tr>
-                      ) : null}
-                    </tbody>
-                  </table>
+                <div className="rowBetween">
+                  <div className="sectionSubtitle">Scan QR Code</div>
+                  <button type="button" className="btnOutline" onClick={() => (scanning ? stopScan() : startScan())}>
+                    {scanning ? "Stop Scan" : "Start Scan"}
+                  </button>
                 </div>
+
+                <div className="scanBox">
+                  {scanSupported ? <video ref={videoRef} className="video" muted playsInline /> : <div className="scanUnsupported">QR scanning isn’t supported in this browser. Use Manual Entry below.</div>}
+                </div>
+
+                <div className="sectionSubtitle">Manual Entry</div>
+                <input className="input" value={manualQr} onChange={(e) => setManualQr(e.target.value)} placeholder="Paste the QR value here (if needed)" autoComplete="off" />
+                <div className="actions">
+                  <button type="button" className="btnPrimary" onClick={submitCheckIn}>
+                    Submit Check-In
+                  </button>
+                </div>
+
+                {statusMsg ? <div className="status">{statusMsg}</div> : null}
               </>
-            ) : null}
+            ) : (
+              <>
+                <div className="sectionTitle">Admin / Instructor</div>
+
+                <div className="grid1">
+                  <div>
+                    <label className="label">Session Title</label>
+                    <input className="input" value={sessionTitle} onChange={(e) => setSessionTitle(e.target.value)} />
+                  </div>
+                </div>
+
+                <div className="grid2">
+                  <div>
+                    <label className="label">Start Time</label>
+                    <input className="input" type="datetime-local" value={sessionStart} onChange={(e) => setSessionStart(e.target.value)} />
+                  </div>
+                  <div>
+                    <label className="label">End Time</label>
+                    <input className="input" type="datetime-local" value={sessionEnd} onChange={(e) => setSessionEnd(e.target.value)} />
+                  </div>
+                </div>
+
+                <div className="actions">
+                  <button type="button" className="btnPrimary" onClick={createSession}>
+                    Create New Class Session
+                  </button>
+                </div>
+
+                <div className="sectionSubtitle">Recent Sessions</div>
+                <div className="table">
+                  <div className="tHead">
+                    <div>Title</div>
+                    <div>Start</div>
+                    <div>End</div>
+                  </div>
+                  {recentSessions.length ? (
+                    recentSessions.map((s) => (
+                      <div className="tRow" key={s.id}>
+                        <div>{s.title}</div>
+                        <div>{new Date(s.start_time).toLocaleString()}</div>
+                        <div>{new Date(s.end_time).toLocaleString()}</div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="tEmpty">No sessions yet.</div>
+                  )}
+                </div>
+
+                {statusMsg ? <div className="status">{statusMsg}</div> : null}
+              </>
+            )}
           </>
         )}
 
-        <div className="footer">© 2026 ClassCheck Pro™</div>
+        <footer className="footer">© {new Date().getFullYear()} ClassCheck Pro™</footer>
       </div>
     </div>
   );

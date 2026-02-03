@@ -12,7 +12,7 @@
 
 /* Global brand font */
 html, body, #root, .page, .card, button, input, select, textarea {
-  font-family: "Century Gothic", "CenturyGothic", "AppleGothic", Arial, sans-serif;
+  font-family: "Century Gothic", CenturyGothic, AppleGothic, "URW Gothic L", sans-serif;
 }
 
 body{
@@ -132,7 +132,7 @@ input{
 input::placeholder{
   color:#64748b;
   opacity:.9;
-  font-family: inherit; /* ensure placeholder matches */
+  font-family: "Century Gothic", CenturyGothic, AppleGothic, "URW Gothic L", sans-serif; /* ensure placeholder matches */
 }
 
 input:focus{
@@ -211,13 +211,11 @@ input:focus{
   object-fit: contain;
 }
 
-.btnPrimary {
-  background: #12086F;
-}
+
 
 /* Ensure inputs keep Century Gothic even with browser autofill */
 input, select, textarea, button {
-  font-family: "Century Gothic", CenturyGothic, AppleGothic, sans-serif;
+  font-family: "Century Gothic", CenturyGothic, AppleGothic, "URW Gothic L", sans-serif;
 }
 
 input:-webkit-autofill,
@@ -230,7 +228,7 @@ select:-webkit-autofill,
 select:-webkit-autofill:hover,
 select:-webkit-autofill:focus {
   -webkit-text-fill-color: #111827;
-  font-family: "Century Gothic", CenturyGothic, AppleGothic, sans-serif !important;
+  font-family: "Century Gothic", CenturyGothic, AppleGothic, "URW Gothic L", sans-serif;
   transition: background-color 9999s ease-in-out 0s;
 }
 
@@ -288,15 +286,7 @@ select:-webkit-autofill:focus {
   margin: 10px 0 0;
 }
 
-.btnSecondary {
-  border: 1px solid #c7d2fe;
-  background: #fff;
-  color: #0f172a;
-  padding: 10px 14px;
-  border-radius: 10px;
-  cursor: pointer;
-  font-weight: 600;
-}
+
 
 .alert {
   margin: 10px 0 12px;
@@ -418,4 +408,51 @@ select:-webkit-autofill:focus {
   font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.04em;
+}
+
+
+input, button, textarea, select { font-family: inherit; }
+
+
+.btnPrimary,
+.btnSecondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-radius: 12px;
+  font-weight: 600;
+  border: 1px solid transparent;
+  cursor: pointer;
+  user-select: none;
+  line-height: 1.1;
+}
+
+.btnPrimary {
+  background: #12086F;
+  color: #ffffff;
+}
+
+.btnPrimary:hover {
+  filter: brightness(0.98);
+}
+
+.btnSecondary {
+  background: #ffffff;
+  color: #12086F;
+  border-color: #cfd7ea;
+}
+
+.btnSecondaryActive {
+  background: #eaf1ff;
+  border-color: #b7c6f3;
+}
+
+
+.tabRow{
+  display:flex;
+  gap:10px;
+  margin: 12px 0 18px 0;
+  flex-wrap: wrap;
 }

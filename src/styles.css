@@ -192,3 +192,230 @@ input:focus{
   color:var(--muted);
   font-size:13px;
 }
+
+
+
+/* --- Visual fixes requested --- */
+.brandHeader {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-bottom: 18px;
+}
+
+.brandLogoWide {
+  width: 100%;
+  max-width: 860px;
+  height: auto;
+  max-height: 210px;
+  object-fit: contain;
+}
+
+.btnPrimary {
+  background: #12086F;
+}
+
+/* Ensure inputs keep Century Gothic even with browser autofill */
+input, select, textarea, button {
+  font-family: "Century Gothic", CenturyGothic, AppleGothic, sans-serif;
+}
+
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+textarea:-webkit-autofill,
+textarea:-webkit-autofill:hover,
+textarea:-webkit-autofill:focus,
+select:-webkit-autofill,
+select:-webkit-autofill:hover,
+select:-webkit-autofill:focus {
+  -webkit-text-fill-color: #111827;
+  font-family: "Century Gothic", CenturyGothic, AppleGothic, sans-serif !important;
+  transition: background-color 9999s ease-in-out 0s;
+}
+
+
+/* --- Added UI elements (keeps existing sizing) --- */
+.segmented {
+  display: flex;
+  gap: 10px;
+  margin: 12px 0 16px;
+}
+
+.segBtn {
+  border: 1px solid #c7d2fe;
+  background: #fff;
+  color: #0f172a;
+  padding: 8px 14px;
+  border-radius: 10px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.segBtnActive {
+  background: #eef2ff;
+}
+
+.grid2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.grid3 {
+  display: grid;
+  grid-template-columns: 1fr 140px 1fr;
+  gap: 14px;
+}
+
+@media (max-width: 720px) {
+  .grid2, .grid3 {
+    grid-template-columns: 1fr;
+  }
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.actionsRow {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin: 10px 0 0;
+}
+
+.btnSecondary {
+  border: 1px solid #c7d2fe;
+  background: #fff;
+  color: #0f172a;
+  padding: 10px 14px;
+  border-radius: 10px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.alert {
+  margin: 10px 0 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 14px;
+}
+
+.alertError {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #7f1d1d;
+}
+
+.alertOk {
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  color: #1e3a8a;
+}
+
+.sectionTitle {
+  font-size: 18px;
+  margin: 12px 0 10px;
+}
+
+.infoBox {
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  padding: 12px;
+  border-radius: 12px;
+  margin: 10px 0 14px;
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.divider {
+  border: none;
+  border-top: 1px solid #e5e7eb;
+  margin: 16px 0;
+}
+
+.topBar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.welcomeTitle {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.mutedSmall {
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.scannerWrap {
+  margin: 10px 0 14px;
+}
+
+.scannerHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.scannerTitle {
+  font-weight: 700;
+}
+
+.scannerBox {
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  overflow: hidden;
+  background: #0b1220;
+}
+
+.scannerVideo {
+  width: 100%;
+  height: 240px;
+  object-fit: cover;
+  display: block;
+}
+
+.scannerHint {
+  padding: 10px 12px;
+  background: #111827;
+  color: #e5e7eb;
+  font-size: 13px;
+}
+
+.tableWrap {
+  margin-top: 12px;
+}
+
+.tableTitle {
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.table th, .table td {
+  border-top: 1px solid #e5e7eb;
+  padding: 10px 8px;
+  text-align: left;
+}
+
+.table thead th {
+  border-top: none;
+  color: #374151;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}

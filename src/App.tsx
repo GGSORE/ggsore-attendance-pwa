@@ -611,7 +611,35 @@ export default function App() {
 
             <hr className="divider" />
 
+            {isAdmin ? (
+              <div className="tabRow">
+                <button
+                  type="button"
+                  className={
+                    adminTab === "checkin"
+                      ? "btnSecondary btnSecondaryActive"
+                      : "btnSecondary"
+                  }
+                  onClick={() => setAdminTab("checkin")}
+                >
+                  Check-In
+                </button>
+                <button
+                  type="button"
+                  className={
+                    adminTab === "admin"
+                      ? "btnSecondary btnSecondaryActive"
+                      : "btnSecondary"
+                  }
+                  onClick={() => setAdminTab("admin")}
+                >
+                  Admin / Instructor
+                </button>
+              </div>
+            ) : null}
+
             {/* Student check-in tools */}
+            {(!isAdmin || adminTab === "checkin") ? (<>
             <h2 className="sectionTitle">Check-In</h2>
 
             {scanMsg ? <div className="alert alertOk">{scanMsg}</div> : null}
@@ -640,8 +668,11 @@ export default function App() {
               </div>
             </form>
 
+            </>
+            ) : null}
+
             {/* Admin panel */}
-            {showAdminLanding ? (
+            {isAdmin && adminTab === "admin" ? (
               <>
                 <hr className="divider" />
                 <h2 className="sectionTitle">Admin / Instructor</h2>

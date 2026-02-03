@@ -1,1702 +1,1678 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
 import QRCode from "qrcode";
-// @ts-ignore - jsqr has no bundled TS types in some setups
-import jsQR from "jsqr";
 
-/**
- * GGSORE Attendance PWA
- * - Student: sign up / log in, upload headshot, scan QR to check in/out
- * - Admin: create/select session, import roster CSV (persists), add walk-ins, manage attendance
- *
- * IMPORTANT: This file assumes Supabase tables:
- *  - gg_sessions: id (uuid PK), title (text), starts_at (timestamptz), ends_at (timestamptz)
- *      (other columns are OK; app only requires these 4)
- *  - gg_roster: session_id (uuid), trec_license (text), first_name (text), middle_initial (text, nullable),
- *              last_name (text), payment (text), checkin_at (timestamptz, nullable),
- *              checkout_at (timestamptz, nullable), status (text, nullable), absent (boolean, nullable)
- *  - gg_headshot_map: trec_license (text unique), storage_path (text)
- * And bucket: gg-headshots
- */
+/* =========================
+   Supabase Setup
+========================= */
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+const supabaseAnon = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+const ADMIN_EMAIL = ((import.meta.env.VITE_ADMIN_EMAIL as string | undefined) || "").toLowerCase();
 
-// ===== Supabase =====
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const supabase =
+  supabaseUrl && supabaseAnon ? createClient(supabaseUrl, supabaseAnon) : null;
 
-type PaymentMethod = "pay_link" | "cash";
+/* =========================
+   Brand / Links
+========================= */
+const BRAND_RED = "#8B0000";
+// Official TREC rules landing page; section §535.65 includes the student identity requirement.
+const TREC_RULES_URL = "https://www.trec.texas.gov/agency-information/rules-and-laws/trec-rules";
 
-type SessionRow = {
+/* =========================
+   Types
+========================= */
+type Session = {
   id: string;
   title: string;
-  starts_at: string | null;
-  ends_at: string | null;
+  startsAt: string;
+  endsAt: string;
+  checkinExpiresAt: string;
+  checkoutExpiresAt: string;
+  checkinCode: string;
+  checkoutCode: string;
 };
 
-type RosterRow = {
+type Attendance = {
   session_id: string;
   trec_license: string;
-  first_name: string;
-  middle_initial?: string | null;
-  last_name: string;
-  payment?: string | null;
-  checkin_at?: string | null;
-  checkout_at?: string | null;
-  status?: string | null;
-  absent?: boolean | null;
+  checkin_at?: string;
+  checkout_at?: string;
+  method_checkin?: "scan" | "manual";
+  method_checkout?: "scan" | "manual";
+  notes?: string;
 };
 
-type HeadshotMapRow = {
-  trec_license: string;
-  storage_path: string;
+type DBSess = {
+  id: string;
+  title: string;
+  starts_at: string;
+  ends_at: string;
+  checkin_expires_at: string;
+  checkout_expires_at: string;
+  checkin_code: string;
+  checkout_code: string;
 };
 
-// ===== Helpers =====
-const BRAND_RED = "#8B0000";
-const FONT_STACK =
-  'Century Gothic, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif';
+/* =========================
+   Helpers
+========================= */
+function dbSessToUi(s: DBSess): Session {
+  return {
+    id: s.id,
+    title: s.title,
+    startsAt: s.starts_at,
+    endsAt: s.ends_at,
+    checkinExpiresAt: s.checkin_expires_at,
+    checkoutExpiresAt: s.checkout_expires_at,
+    checkinCode: s.checkin_code,
+    checkoutCode: s.checkout_code,
+  };
+}
+function uiSessToDb(s: Session): Omit<DBSess, "id"> {
+  return {
+    title: s.title,
+    starts_at: s.startsAt,
+    ends_at: s.endsAt,
+    checkin_expires_at: s.checkinExpiresAt,
+    checkout_expires_at: s.checkoutExpiresAt,
+    checkin_code: s.checkinCode,
+    checkout_code: s.checkoutCode,
+  };
+}
+function normalizeLicense(v: string) {
+  return v.trim().toUpperCase().replace(/\s+/g, "");
+}
+function isValidLicense(v: string) {
+  // Numeric portion is 6 or 7 digits; suffix required: -SA, -B, or -BB
+  return /^\d{6,7}-(SA|B|BB)$/i.test(v);
+}
+function randCode(len = 10) {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  let s = "";
+  for (let i = 0; i < len; i++) s += chars[Math.floor(Math.random() * chars.length)];
+  return s;
+}
+function isExpired(expiresAt: string) {
+  return Date.now() > new Date(expiresAt).getTime();
+}
+function qrPayload(action: "checkin" | "checkout", sessionId: string, code: string, expiresAt: string) {
+  return JSON.stringify({ action, sessionId, code, expiresAt });
+}
 
-function toTitleCase(s: string) {
-  return s
+/* =========================
+   Time helpers (Central)
+========================= */
+function formatCentral(iso: string) {
+  try {
+    return new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/Chicago",
+      year: "numeric",
+      month: "numeric",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    }).format(new Date(iso));
+  } catch {
+    return new Date(iso).toLocaleString();
+  }
+}
+
+function capWords(s: string) {
+  return (s || "")
     .trim()
     .toLowerCase()
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-function normalizeLicense(raw: string) {
-  return raw.trim();
-}
 
-function parseCsv(text: string): string[][] {
-  // Minimal CSV parser (handles quoted fields + commas)
-  const rows: string[][] = [];
-  let cur: string[] = [];
-  let val = "";
-  let inQuotes = false;
+/* =========================
+   CSV (roster) helpers
+========================= */
+type RosterRow = {
+  trec_license: string;
+  first_name?: string;
+  last_name?: string;
+  notes?: string;
+  payment_method?: "pay_link" | "cash";
+  is_walkin?: boolean;
+};
+function csvToRoster(csv: string): RosterRow[] {
+  const lines = csv.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  if (!lines.length) return [];
+  const header = lines[0].split(",").map((h) => h.trim().toLowerCase());
+  const idxLic = header.indexOf("trec_license");
+  const idxFn = header.indexOf("first_name");
+  const idxLn = header.indexOf("last_name");
+  const idxNotes = header.indexOf("notes");
+  if (idxLic === -1) return [];
 
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i];
-    const next = text[i + 1];
-
-    if (inQuotes) {
-      if (ch === '"' && next === '"') {
-        val += '"';
-        i++;
-      } else if (ch === '"') {
-        inQuotes = false;
-      } else {
-        val += ch;
-      }
-    } else {
-      if (ch === '"') inQuotes = true;
-      else if (ch === ",") {
-        cur.push(val);
-        val = "";
-      } else if (ch === "\n") {
-        cur.push(val);
-        rows.push(cur.map((x) => x.trim()));
-        cur = [];
-        val = "";
-      } else if (ch !== "\r") {
-        val += ch;
-      }
-    }
+  const out: RosterRow[] = [];
+  for (let i = 1; i < lines.length; i++) {
+    const parts = lines[i].split(",").map((p) => p.trim());
+    const lic = normalizeLicense(parts[idxLic] || "");
+    if (!isValidLicense(lic)) continue;
+    out.push({
+      trec_license: lic,
+      first_name: idxFn >= 0 ? parts[idxFn] : "",
+      last_name: idxLn >= 0 ? parts[idxLn] : "",
+      notes: idxNotes >= 0 ? parts[idxNotes] : "",
+      payment_method: "pay_link",
+      is_walkin: false,
+    });
   }
-  if (val.length > 0 || cur.length > 0) {
-    cur.push(val);
-    rows.push(cur.map((x) => x.trim()));
-  }
-  // remove empty trailing rows
-  return rows.filter((r) => r.some((c) => c.trim().length > 0));
+  return out;
 }
 
-function safeIsoFromDateTimeLocal(v: string): string | null {
-  // v like "2026-02-02T09:00"
-  if (!v) return null;
-  const d = new Date(v);
-  if (Number.isNaN(d.getTime())) return null;
-  return d.toISOString();
-}
-
-function localDateTimeFromIso(iso: string | null | undefined): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  const pad = (n: number) => String(n).padStart(2, "0");
-  const yyyy = d.getFullYear();
-  const mm = pad(d.getMonth() + 1);
-  const dd = pad(d.getDate());
-  const hh = pad(d.getHours());
-  const mi = pad(d.getMinutes());
-  return `${yyyy}-${mm}-${dd}T${hh}:${mi}`;
-}
-
-function isoNow() {
-  return new Date().toISOString();
-}
-
-function badgeStyle(bg: string, color: string) {
-  return {
-    display: "inline-flex",
-    alignItems: "center",
-    gap: 8,
-    padding: "8px 12px",
-    borderRadius: 999,
-    background: bg,
-    color,
-    fontWeight: 800 as const,
-    fontSize: 12,
-  };
-}
-
-function btnStyle(bg: string, color: string = "#fff") {
-  return {
-    padding: "10px 12px",
-    borderRadius: 12,
-    border: "1px solid rgba(0,0,0,0.12)",
-    background: bg,
-    color,
-    fontWeight: 900 as const,
-    cursor: "pointer",
-    whiteSpace: "nowrap" as const,
-  };
-}
-
-function subtleCard() {
-  return {
-    background: "#fff",
-    border: "1px solid #ddd",
-    borderRadius: 16,
-    padding: 16,
-  };
-}
-
+/* =========================
+   App
+========================= */
 export default function App() {
-  // ===== Auth + identity =====
-  const [authUser, setAuthUser] = useState<any>(null);
-  const [authLoading, setAuthLoading] = useState(true);
+  const [status, setStatus] = useState("");
 
-  const [mode, setMode] = useState<"student" | "admin">("student");
-  const [isAdmin, setIsAdmin] = useState(false);
-
-  // Student auth form
+  // Auth / profile
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [showPw, setShowPw] = useState(false);
+  const [licenseInput, setLicenseInput] = useState("");
+  const [authed, setAuthed] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
 
-  const [trecLicense, setTrecLicense] = useState("");
+  // Password recovery
+  const [recoveryMode, setRecoveryMode] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [newPassword2, setNewPassword2] = useState("");
 
-  // Student profile fields (sign-up)
-  const [firstName, setFirstName] = useState("");
-  const [middleInitial, setMiddleInitial] = useState("");
-  const [lastName, setLastName] = useState("");
+  // Tabs
+  const [tab, setTab] = useState<"student" | "admin">("student");
 
-  const [studentMsg, setStudentMsg] = useState<string | null>(null);
+  // Sessions + attendance
+  const [sessions, setSessions] = useState<Session[]>([]);
+  const [activeSessionId, setActiveSessionId] = useState<string>("");
+
+  const [checkinQrUrl, setCheckinQrUrl] = useState("");
+  const [checkoutQrUrl, setCheckoutQrUrl] = useState("");
+
+  const [rosterCSV, setRosterCSV] = useState("trec_license,first_name,last_name,notes\n");
+  const [roster, setRoster] = useState<RosterRow[]>([]);
+  const [walkinFirst, setWalkinFirst] = useState("");
+  const [walkinLast, setWalkinLast] = useState("");
+  const [walkinLicense, setWalkinLicense] = useState("");
+  const [walkinPayMethod, setWalkinPayMethod] = useState<"pay_link" | "cash">("pay_link");
+  const [walkinNotes, setWalkinNotes] = useState("");
+  const [attendance, setAttendance] = useState<Attendance[]>([]);
+
+  const [rosterHeadshots, setRosterHeadshots] = useState<Record<string, string>>({});
+  const [absentSet, setAbsentSet] = useState<Record<string, boolean>>({});
+  const [removedSet, setRemovedSet] = useState<Record<string, boolean>>({});
+
+  // Student scanning
+  const [scanText, setScanText] = useState("");
+  type ScanResult = { kind: "success" | "error"; message: string };
+  const [scanResult, setScanResult] = useState<ScanResult | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const scanTimerRef = useRef<number | null>(null);
+  const [cameraOn, setCameraOn] = useState(false);
 
   // Headshot
-  const [pendingHeadshot, setPendingHeadshot] = useState<File | null>(null);
+  const [headshotPath, setHeadshotPath] = useState<string>("");
+  const [headshotSignedUrl, setHeadshotSignedUrl] = useState<string>("");
   const [headshotUploading, setHeadshotUploading] = useState(false);
-  const [headshotSignedUrl, setHeadshotSignedUrl] = useState<string | null>(null);
+  const [pendingHeadshot, setPendingHeadshot] = useState<File | null>(null);
 
-  // ===== Sessions + roster =====
-  const [sessions, setSessions] = useState<SessionRow[]>([]);
-  const [sessionsLoading, setSessionsLoading] = useState(false);
-  const [adminNote, setAdminNote] = useState<string | null>(null);
-
-  const [selectedSessionId, setSelectedSessionId] = useState<string>("");
-  const selectedSession = useMemo(
-    () => sessions.find((s) => s.id === selectedSessionId) || null,
-    [sessions, selectedSessionId]
-  );
-
-  // Create session
-  const CLASS_TITLES = useMemo(
-    () => [
-      "Commercial Leasing 101™",
-      "Commercial Leasing Contracts 101™",
-      "Commercial Letters of Intent 101™ – Leasing & Sales",
-      "Commercial Sales 101™: From Client to Contract to Close",
-      "Deal Dynamics™: Deciphering Commercial Real Estate Contracts",
-      "Commercial Property Management 101™ – Apartments Not Included",
-      "Things You Need to Know About Practicing Law in Real Estate™",
-    ],
-    []
-  );
-
-  const [newTitle, setNewTitle] = useState(CLASS_TITLES[0] || "");
-  const [newStartsLocal, setNewStartsLocal] = useState("");
-  const [newEndsLocal, setNewEndsLocal] = useState("");
-
-  // CSV import
-  const [csvFile, setCsvFile] = useState<File | null>(null);
-  const [csvBusy, setCsvBusy] = useState(false);
-
-  // Roster (single source of truth = DB)
-  const [roster, setRoster] = useState<RosterRow[]>([]);
-  const [rosterLoading, setRosterLoading] = useState(false);
-
-  // Headshot URLs for roster
-  const [rosterHeadshots, setRosterHeadshots] = useState<Record<string, string>>({});
-
-  // Walk-in form (Admin only)
-  const [walkInLicense, setWalkInLicense] = useState("");
-  const [walkInFirst, setWalkInFirst] = useState("");
-  const [walkInMI, setWalkInMI] = useState("");
-  const [walkInLast, setWalkInLast] = useState("");
-  const [walkInPayment, setWalkInPayment] = useState<PaymentMethod>("pay_link");
-  const [walkInBusy, setWalkInBusy] = useState(false);
-
-  // ===== Scanner =====
-  const videoRef = useRef<HTMLVideoElement | null>(null);
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const rafRef = useRef<number | null>(null);
-
-  const [cameraOn, setCameraOn] = useState(false);
-  const [scanStatus, setScanStatus] = useState<null | { type: "ok" | "fail"; msg: string }>(null);
-  const [scanBusy, setScanBusy] = useState(false);
-
-  const checkinQrUrl = useMemo(() => {
-    if (!selectedSessionId) return "";
-    const payload = JSON.stringify({ session_id: selectedSessionId, action: "checkin" });
-    return `data:text/plain,${encodeURIComponent(payload)}`;
-  }, [selectedSessionId]);
-
-  const checkoutQrUrl = useMemo(() => {
-    if (!selectedSessionId) return "";
-    const payload = JSON.stringify({ session_id: selectedSessionId, action: "checkout" });
-    return `data:text/plain,${encodeURIComponent(payload)}`;
-  }, [selectedSessionId]);
-
-  // ===== Boot =====
-  useEffect(() => {
-    (async () => {
-      setAuthLoading(true);
-      const { data } = await supabase.auth.getUser();
-      setAuthUser(data.user ?? null);
-
-      // Admin check: table gg_admins (optional). If missing, isAdmin stays false.
-      const admin = await isUserAdmin(data.user?.id);
-      setIsAdmin(admin);
-
-      setAuthLoading(false);
-    })();
-
-    const { data: sub } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      setAuthUser(session?.user ?? null);
-      const admin = await isUserAdmin(session?.user?.id);
-      setIsAdmin(admin);
-    });
-
-    return () => {
-      sub.subscription.unsubscribe();
-    };
-  }, []);
-
-  useEffect(() => {
-    if (mode === "admin" && isAdmin) {
-      void loadSessions();
-    }
-  }, [mode, isAdmin]);
-
-  useEffect(() => {
-    if (mode === "admin" && isAdmin && selectedSessionId) {
-      void loadRosterFromDb(selectedSessionId);
-    } else {
-      setRoster([]);
-      setRosterHeadshots({});
-    }
-  }, [mode, isAdmin, selectedSessionId]);
-
-  useEffect(() => {
-    if (mode === "student" && authUser) {
-      // load student's headshot if available
-      void loadMyHeadshot();
-    } else {
-      setHeadshotSignedUrl(null);
-      setPendingHeadshot(null);
-    }
-  }, [mode, authUser]);
-
-  // ===== Admin helper =====
-  async function isUserAdmin(userId?: string): Promise<boolean> {
-    if (!userId) return false;
-    try {
-      const { data, error } = await supabase.from("gg_admins").select("user_id").eq("user_id", userId).maybeSingle();
-      if (error) return false;
-      return !!data;
-    } catch {
-      return false;
-    }
+  function setAdminFromEmail(e: string) {
+    const norm = e.trim().toLowerCase();
+    setIsAdmin(Boolean(ADMIN_EMAIL) && norm === ADMIN_EMAIL);
   }
 
-  // ===== Sessions =====
-  async function loadSessions() {
-    setSessionsLoading(true);
-    setAdminNote(null);
-    try {
-      const { data, error } = await supabase
-        .from("gg_sessions")
-        .select("id,title,starts_at,ends_at")
-        .order("starts_at", { ascending: false })
-        .limit(50);
-
-      if (error) {
-        setAdminNote(`Note: Could not load sessions.`);
-        setSessions([]);
-      } else {
-        setSessions((data || []) as SessionRow[]);
-      }
-    } catch {
-      setAdminNote(`Note: Could not load sessions.`);
-      setSessions([]);
-    } finally {
-      setSessionsLoading(false);
-    }
+  async function refreshHeadshotSignedUrl(path: string) {
+    if (!supabase || !path) return;
+    const { data, error } = await supabase.storage.from("gg-headshots").createSignedUrl(path, 60 * 60 * 24 * 7);
+    if (error) return;
+    setHeadshotSignedUrl(data?.signedUrl || "");
   }
 
-  async function createSession() {
-    if (!isAdmin) return;
-    setAdminNote(null);
-
-    const startsIso = safeIsoFromDateTimeLocal(newStartsLocal);
-    const endsIso = safeIsoFromDateTimeLocal(newEndsLocal);
-    if (!newTitle.trim() || !startsIso || !endsIso) {
-      setAdminNote("Note: Please select a class title, start time, and end time.");
-      return;
-    }
-
-    const { data, error } = await supabase
-      .from("gg_sessions")
-      .insert([
-        {
-          title: newTitle.trim(),
-          starts_at: startsIso,
-          ends_at: endsIso,
-        },
-      ])
-      .select("id,title,starts_at,ends_at")
-      .single();
-
-    if (error) {
-      setAdminNote(`Note: Could not create session. ${error.message}`);
-      return;
-    }
-
-    await loadSessions();
-    setSelectedSessionId((data as any).id);
-  }
-
-  // ===== Roster DB =====
-  async function loadRosterFromDb(sessionId: string) {
-    setRosterLoading(true);
-    setAdminNote(null);
-    try {
-      // Keep select list conservative to avoid schema-cache complaints.
-      const { data, error } = await supabase
-        .from("gg_roster")
-        .select("session_id,trec_license,first_name,middle_initial,last_name,payment,checkin_at,checkout_at,status,absent")
-        .eq("session_id", sessionId)
-        .order("last_name", { ascending: true })
-        .order("first_name", { ascending: true });
-
-      if (error) {
-        setAdminNote(`Note: Could not load roster. ${error.message}`);
-        setRoster([]);
-        setRosterHeadshots({});
-      } else {
-        const rows = (data || []) as RosterRow[];
-        setRoster(rows);
-        await hydrateRosterHeadshots(rows);
-      }
-    } catch (e: any) {
-      setAdminNote(`Note: Could not load roster.`);
-      setRoster([]);
-      setRosterHeadshots({});
-    } finally {
-      setRosterLoading(false);
-    }
-  }
-
-  async function hydrateRosterHeadshots(rows: RosterRow[]) {
-    try {
-      const licenses = Array.from(new Set(rows.map((r) => r.trec_license).filter(Boolean)));
-      if (licenses.length === 0) {
-        setRosterHeadshots({});
-        return;
-      }
-
-      const { data: mapRows, error: mapErr } = await supabase
-        .from("gg_headshot_map")
-        .select("trec_license,storage_path")
-        .in("trec_license", licenses);
-
-      if (mapErr || !mapRows) {
-        setRosterHeadshots({});
-        return;
-      }
-
-      const maps = mapRows as HeadshotMapRow[];
-      const paths = maps.map((m) => m.storage_path).filter(Boolean);
-      if (paths.length === 0) {
-        setRosterHeadshots({});
-        return;
-      }
-
-      // createSignedUrls can batch
-      const { data: signed, error: signErr } = await supabase.storage.from("gg-headshots").createSignedUrls(paths, 60 * 60);
-      if (signErr || !signed) {
-        setRosterHeadshots({});
-        return;
-      }
-
-      const pathToUrl: Record<string, string> = {};
-      signed.forEach((s) => {
-        if (s?.signedUrl && s.path) pathToUrl[s.path] = s.signedUrl;
-      });
-
-      const licenseToUrl: Record<string, string> = {};
-      maps.forEach((m) => {
-        const url = pathToUrl[m.storage_path];
-        if (url) licenseToUrl[m.trec_license] = url;
-      });
-
-      setRosterHeadshots(licenseToUrl);
-    } catch {
-      setRosterHeadshots({});
-    }
-  }
-
-  async function upsertRosterRows(sessionId: string, rows: RosterRow[]) {
-    if (!isAdmin) return;
-    if (!sessionId) return;
-
-    // Upsert by (session_id, trec_license) - assumes unique constraint.
-    const payload = rows.map((r) => ({
-      session_id: sessionId,
-      trec_license: normalizeLicense(r.trec_license),
-      first_name: toTitleCase(r.first_name || ""),
-      middle_initial: (r.middle_initial || "").trim() || null,
-      last_name: toTitleCase(r.last_name || ""),
-      payment: r.payment ?? null,
-      checkin_at: r.checkin_at ?? null,
-      checkout_at: r.checkout_at ?? null,
-      status: r.status ?? null,
-      absent: r.absent ?? null,
-    }));
-
-    const { error } = await supabase
-      .from("gg_roster")
-      .upsert(payload, { onConflict: "session_id,trec_license" });
-
-    if (error) {
-      setAdminNote(`Note: Could not save roster. ${error.message}`);
-    }
-  }
-
-  // ===== CSV Import =====
-  const rosterTemplate = `photo,trec_license,first_name,middle_initial,last_name,payment,checkin_at,checkout_at,status
-,123456-SA,First,M,Last,pay_link,,,`;
-  async function importCsvToRoster() {
-    if (!isAdmin) return;
-    if (!selectedSessionId) {
-      setAdminNote("Note: Create or select a session first.");
-      return;
-    }
-    if (!csvFile) {
-      setAdminNote("Note: Please choose a CSV file first.");
-      return;
-    }
-
-    setCsvBusy(true);
-    setAdminNote(null);
-
-    try {
-      const text = await csvFile.text();
-      const rows = parseCsv(text);
-      if (rows.length < 2) {
-        setAdminNote("Note: CSV appears empty.");
-        return;
-      }
-
-      const header = rows[0].map((h) => h.toLowerCase());
-      const idx = (name: string) => header.indexOf(name);
-
-      // expected headers
-      const iLicense = idx("trec_license");
-      const iFirst = idx("first_name");
-      const iMI = idx("middle_initial");
-      const iLast = idx("last_name");
-      const iPayment = idx("payment");
-      const iCheckin = idx("checkin_at");
-      const iCheckout = idx("checkout_at");
-      const iStatus = idx("status");
-
-      if (iLicense < 0 || iFirst < 0 || iLast < 0) {
-        setAdminNote("Note: CSV must include headers: trec_license, first_name, last_name (and optional middle_initial, payment, checkin_at, checkout_at, status).");
-        return;
-      }
-
-      const parsed: RosterRow[] = rows.slice(1).map((r) => ({
-        session_id: selectedSessionId,
-        trec_license: normalizeLicense(r[iLicense] || ""),
-        first_name: r[iFirst] || "",
-        middle_initial: iMI >= 0 ? (r[iMI] || "") : "",
-        last_name: r[iLast] || "",
-        payment: iPayment >= 0 ? (r[iPayment] || null) : null,
-        checkin_at: iCheckin >= 0 ? (r[iCheckin] || null) : null,
-        checkout_at: iCheckout >= 0 ? (r[iCheckout] || null) : null,
-        status: iStatus >= 0 ? (r[iStatus] || null) : null,
-        absent: false,
-      })).filter((r) => r.trec_license);
-
-      await upsertRosterRows(selectedSessionId, parsed);
-      await loadRosterFromDb(selectedSessionId);
-      setCsvFile(null);
-    } catch (e: any) {
-      setAdminNote("Note: Could not import CSV.");
-    } finally {
-      setCsvBusy(false);
-    }
-  }
-
-  // ===== Walk-ins =====
-  async function addWalkIn() {
-    if (!isAdmin) return;
-    if (!selectedSessionId) {
-      setAdminNote("Note: Create or select a session first.");
-      return;
-    }
-    const lic = normalizeLicense(walkInLicense);
-    if (!lic || !walkInFirst.trim() || !walkInLast.trim()) {
-      setAdminNote("Note: Walk-in requires TREC License, First Name, and Last Name.");
-      return;
-    }
-
-    setWalkInBusy(true);
-    setAdminNote(null);
-
-    const now = isoNow();
-    const row: RosterRow = {
-      session_id: selectedSessionId,
-      trec_license: lic,
-      first_name: walkInFirst,
-      middle_initial: walkInMI,
-      last_name: walkInLast,
-      payment: walkInPayment,
-      checkin_at: now,
-      checkout_at: null,
-      status: "present",
-      absent: false,
-    };
-
-    await upsertRosterRows(selectedSessionId, [row]);
-    await loadRosterFromDb(selectedSessionId);
-
-    setWalkInLicense("");
-    setWalkInFirst("");
-    setWalkInMI("");
-    setWalkInLast("");
-    setWalkInPayment("pay_link");
-    setWalkInBusy(false);
-  }
-
-  // ===== Attendance actions =====
-  async function updateRosterRow(sessionId: string, lic: string, patch: Partial<RosterRow>) {
-    const { error } = await supabase
-      .from("gg_roster")
-      .update(patch)
-      .eq("session_id", sessionId)
-      .eq("trec_license", lic);
-
-    if (error) {
-      setAdminNote(`Note: Update failed. ${error.message}`);
-      return false;
-    }
-    return true;
-  }
-
-  async function markAbsent(r: RosterRow, absent: boolean) {
-    if (!selectedSessionId) return;
-    await updateRosterRow(selectedSessionId, r.trec_license, { absent, status: absent ? "absent" : "present" });
-    await loadRosterFromDb(selectedSessionId);
-  }
-
-  async function clearPhoto(r: RosterRow) {
-    try {
-      // remove mapping row; doesn't delete storage object (keeps it safe)
-      await supabase.from("gg_headshot_map").delete().eq("trec_license", r.trec_license);
-      await loadRosterFromDb(selectedSessionId);
-    } catch {
-      setAdminNote("Note: Could not clear photo map.");
-    }
-  }
-
-  async function removeStudent(r: RosterRow) {
-    if (!selectedSessionId) return;
-    const { error } = await supabase
-      .from("gg_roster")
-      .delete()
-      .eq("session_id", selectedSessionId)
-      .eq("trec_license", r.trec_license);
-    if (error) setAdminNote(`Note: Could not remove student. ${error.message}`);
-    await loadRosterFromDb(selectedSessionId);
-  }
-
-  async function manualCheckIn(r: RosterRow) {
-    if (!selectedSessionId) return;
-    await updateRosterRow(selectedSessionId, r.trec_license, { checkin_at: isoNow(), status: "present", absent: false });
-    await loadRosterFromDb(selectedSessionId);
-  }
-
-  async function undoCheckIn(r: RosterRow) {
-    if (!selectedSessionId) return;
-    await updateRosterRow(selectedSessionId, r.trec_license, { checkin_at: null });
-    await loadRosterFromDb(selectedSessionId);
-  }
-
-  async function manualCheckOut(r: RosterRow) {
-    if (!selectedSessionId) return;
-    await updateRosterRow(selectedSessionId, r.trec_license, { checkout_at: isoNow() });
-    await loadRosterFromDb(selectedSessionId);
-  }
-
-  async function undoCheckOut(r: RosterRow) {
-    if (!selectedSessionId) return;
-    await updateRosterRow(selectedSessionId, r.trec_license, { checkout_at: null });
-    await loadRosterFromDb(selectedSessionId);
-  }
-
-  // ===== Student: sign up / login / logout =====
-  async function signUpStudent() {
-    setStudentMsg(null);
-
-    const lic = normalizeLicense(trecLicense);
-    if (!email.trim() || !password || !lic || !firstName.trim() || !lastName.trim()) {
-      setStudentMsg("Please complete Email, Password, TREC License, First Name, and Last Name.");
-      return;
-    }
-
-    const mi = (middleInitial || "").trim().slice(0, 1).toUpperCase();
-
-    const { error } = await supabase.auth.signUp({
-      email: email.trim(),
-      password,
-      options: {
-        data: {
-          trec_license: lic,
-          first_name: toTitleCase(firstName),
-          middle_initial: mi || null,
-          last_name: toTitleCase(lastName),
-        },
-      },
-    });
-
-    if (error) {
-      setStudentMsg(error.message);
-      return;
-    }
-
-    setStudentMsg("Account created. Please log in to check in to class.");
-  }
-
-  async function loginStudent() {
-    setStudentMsg(null);
-    if (!email.trim() || !password) {
-      setStudentMsg("Please enter Email and Password.");
-      return;
-    }
-    const { error } = await supabase.auth.signInWithPassword({
-      email: email.trim(),
-      password,
-    });
-    if (error) {
-      setStudentMsg(error.message);
-      return;
-    }
-
-    // Optional: verify entered license matches user_metadata
-    const u = (await supabase.auth.getUser()).data.user;
-    const metaLic = (u?.user_metadata?.trec_license || "").toString();
-    const inputLic = normalizeLicense(trecLicense);
-    if (inputLic && metaLic && inputLic !== metaLic) {
-      setStudentMsg("Logged in, but TREC License does not match this account.");
-    } else {
-      setStudentMsg(null);
-    }
-  }
-
-  async function logout() {
-    await supabase.auth.signOut();
-    setEmail("");
-    setPassword("");
-    setTrecLicense("");
-    setFirstName("");
-    setMiddleInitial("");
-    setLastName("");
-    setStudentMsg(null);
-    setCameraOn(false);
-    stopCamera();
-  }
-
-  // ===== Student: Headshot =====
   async function uploadHeadshot(file: File) {
-    if (!authUser) return;
-    const lic = normalizeLicense((authUser.user_metadata?.trec_license || trecLicense || "").toString());
-    if (!lic) {
-      setStudentMsg("Please add TREC License to the account before uploading a photo.");
-      return;
-    }
+    setStatus("");
+    if (!supabase) return setStatus("Supabase is not connected.");
+    const { data } = await supabase.auth.getSession();
+    const user = data.session?.user;
+    if (!user) return setStatus("Log in first.");
 
     setHeadshotUploading(true);
     try {
-      const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
-      const path = `${lic}/${Date.now()}.${ext}`;
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+      const path = `${user.id}/${Date.now()}_${safeName}`;
 
       const { error: upErr } = await supabase.storage.from("gg-headshots").upload(path, file, {
         cacheControl: "3600",
         upsert: true,
         contentType: file.type || "image/jpeg",
       });
+      if (upErr) throw upErr;
 
-      if (upErr) {
-        setStudentMsg(upErr.message);
-        return;
+      const { error: metaErr } = await supabase.auth.updateUser({ data: { headshot_path: path } });
+    // Also keep a simple public profile map by TREC license for instructor roster display
+    // (Requires gg_profiles table; see SQL snippet)
+    try {
+      const lic = normalizeLicense(licenseInput);
+      if (isValidLicense(lic)) {
+        await supabase.from("gg_profiles").upsert(
+          { trec_license: lic, headshot_path: path, updated_at: isoNow() },
+          { onConflict: "trec_license" }
+        );
       }
+    } catch {}
 
-      // Map license -> path
-      const { error: mapErr } = await supabase
-        .from("gg_headshot_map")
-        .upsert([{ trec_license: lic, storage_path: path }], { onConflict: "trec_license" });
+    // Refresh roster headshots if this student's license is on the roster
+    await refreshRosterHeadshots();
 
-      if (mapErr) {
-        setStudentMsg(mapErr.message);
-        return;
-      }
+      if (metaErr) throw metaErr;
 
-      setPendingHeadshot(null);
-      await loadMyHeadshot();
+      setHeadshotPath(path);
+      await refreshHeadshotSignedUrl(path);
+      setStatus("Headshot uploaded.");
+    } catch (e: any) {
+      setStatus(e?.message || "Upload failed.");
     } finally {
       setHeadshotUploading(false);
     }
   }
+  // =========================
+  // Roster headshot map (gg_profiles)
+  // =========================
+  async function refreshRosterHeadshots(currentRoster: RosterRow[] = roster) {
+    if (!supabase) return;
+    const licenses = Array.from(
+      new Set(
+        currentRoster
+          .map((r) => normalizeLicense(r.trec_license))
+          .filter((lic) => isValidLicense(lic))
+      )
+    );
 
-  async function loadMyHeadshot() {
-    if (!authUser) return;
-    const lic = normalizeLicense((authUser.user_metadata?.trec_license || "").toString());
-    if (!lic) return;
+    if (!licenses.length) {
+      setRosterHeadshots({});
+      return;
+    }
 
     const { data, error } = await supabase
-      .from("gg_headshot_map")
-      .select("trec_license,storage_path")
-      .eq("trec_license", lic)
-      .maybeSingle();
+      .from("gg_profiles")
+      .select("trec_license, headshot_path")
+      .in("trec_license", licenses);
 
-    if (error || !data?.storage_path) {
-      setHeadshotSignedUrl(null);
+    if (error) {
+      // table may not exist yet
+      // don't block the UI; just clear
+      setRosterHeadshots({});
       return;
     }
 
-    const { data: signed, error: signErr } = await supabase.storage.from("gg-headshots").createSignedUrl(data.storage_path, 60 * 60);
-    if (signErr || !signed?.signedUrl) {
-      setHeadshotSignedUrl(null);
-      return;
+    const rows = (data as any[]) || [];
+    const pairs = await Promise.all(
+      rows.map(async (r) => {
+        const lic = String(r.trec_license || "");
+        const path = String(r.headshot_path || "");
+        if (!lic || !path) return [lic, ""] as const;
+        const { data: sdata } = await supabase.storage
+          .from(HEADSHOT_BUCKET)
+          .createSignedUrl(path, 60 * 60); // 1 hour
+        return [lic, sdata?.signedUrl || ""] as const;
+      })
+    );
+
+    const map: Record<string, string> = {};
+    for (const [lic, url] of pairs) {
+      if (lic && url) map[lic] = url;
     }
-    setHeadshotSignedUrl(signed.signedUrl);
+    setRosterHeadshots(map);
   }
 
-  // ===== Scanner =====
-  async function startCamera() {
-    setScanStatus(null);
-    const video = videoRef.current;
-    if (!video) return;
 
+
+  async function loadSessionFromSupabase() {
+    if (!supabase) return;
+    const { data } = await supabase.auth.getSession();
+    const session = data.session;
+    if (!session?.user) return;
+
+    const u = session.user;
+    setAuthed(true);
+    setEmail(u.email || "");
+    setAdminFromEmail(u.email || "");
+
+    const lic = (u.user_metadata?.trec_license as string | undefined) || "";
+    if (lic) setLicenseInput(normalizeLicense(lic));
+
+    const hs = (u.user_metadata?.headshot_path as string | undefined) || "";
+    setHeadshotPath(hs);
+    if (hs) await refreshHeadshotSignedUrl(hs);
+  }
+
+  // Detect password recovery + listen for auth events
+  useEffect(() => {
+    if (!supabase) return;
+
+    const hash = window.location.hash || "";
+    const qs = new URLSearchParams(hash.startsWith("#") ? hash.slice(1) : hash);
+    if (qs.get("type") === "recovery") {
+      setRecoveryMode(true);
+      setStatus("Set a new password below.");
+    }
+
+    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "PASSWORD_RECOVERY") {
+        setRecoveryMode(true);
+        setStatus("Set a new password below.");
+      }
+      if (session?.user) {
+        setAuthed(true);
+        setEmail(session.user.email || "");
+        setAdminFromEmail(session.user.email || "");
+      }
+    });
+
+    loadSessionFromSupabase();
+
+    return () => {
+      sub.subscription.unsubscribe();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // =========================
+  // Supabase: Load sessions + attendance
+  // =========================
+  async function refreshSessions() {
+    if (!supabase) return;
+
+    const { data, error } = await supabase.from("gg_sessions").select("*").order("starts_at", { ascending: false }).limit(50);
+    if (error) {
+      setScanResult({ kind: "error", message: error.message });
+      return setStatus(error.message);
+    }
+
+    const ui = (data as DBSess[]).map(dbSessToUi);
+    setSessions(ui);
+    if (!activeSessionId && ui.length) setActiveSessionId(ui[0].id);
+  }
+
+  async function refreshAttendanceForActiveSession(sessionId: string) {
+    if (!supabase || !sessionId) return;
+    const { data, error } = await supabase.from("gg_attendance").select("*").eq("session_id", sessionId);
+    if (error) {
+      setScanResult({ kind: "error", message: error.message });
+      return setStatus(error.message);
+    }
+
+    const mapped: Attendance[] = (data || []).map((r: any) => ({
+      session_id: r.session_id,
+      trec_license: r.trec_license,
+      checkin_at: r.checkin_at || undefined,
+      checkout_at: r.checkout_at || undefined,
+      method_checkin: (r.method_checkin as any) || undefined,
+      method_checkout: (r.method_checkout as any) || undefined,
+      notes: r.notes || undefined,
+    }));
+    setAttendance(mapped);
+  }
+
+  useEffect(() => {
+    refreshSessions();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authed]);
+
+  useEffect(() => {
+    if (!activeSessionId) return;
+    refreshAttendanceForActiveSession(activeSessionId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSessionId]);
+
+  const activeSession = useMemo(
+    () => sessions.find((s) => s.id === activeSessionId) || null,
+    [sessions, activeSessionId]
+  );
+
+  // Build QR images for active session
+  useEffect(() => {
+    (async () => {
+      if (!activeSession) {
+        setCheckinQrUrl("");
+        setCheckoutQrUrl("");
+        return;
+      }
+      const c1 = qrPayload("checkin", activeSession.id, activeSession.checkinCode, activeSession.checkinExpiresAt);
+      const c2 = qrPayload("checkout", activeSession.id, activeSession.checkoutCode, activeSession.checkoutExpiresAt);
+      setCheckinQrUrl(await QRCode.toDataURL(c1, { width: 520, margin: 2, errorCorrectionLevel: "M" }));
+      setCheckoutQrUrl(await QRCode.toDataURL(c2, { width: 520, margin: 2, errorCorrectionLevel: "M" }));
+    })();
+  }, [activeSession]);
+
+  // Roster import
+  
+  async function handleRosterFile(file: File) {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "environment" },
-        audio: false,
-      });
-      video.srcObject = stream;
-      await video.play();
-      setCameraOn(true);
-      tickScan();
+      const text = await file.text();
+      // normalize line endings
+      const normalized = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+      setRosterCSV(normalized);
+      setStatus(`CSV file loaded: ${file.name}. Tap “Load Roster” to import.`);
     } catch (e: any) {
-      setScanStatus({ type: "fail", msg: "Camera access blocked. Check browser permissions." });
-      setCameraOn(false);
+      setStatus(e?.message || "Could not read the CSV file.");
+    }
+  }
+
+async function importRoster() {
+    try {
+      const r = csvToRoster(rosterCSV);
+      setRoster(r);
+      setRemovedSet({});
+      setAbsentSet({});
+      await refreshRosterHeadshots(r);
+      setStatus(`Roster loaded: ${r.length} student(s).`);
+    } catch (e: any) {
+      setStatus(e?.message || "Roster import failed. Check the CSV format.");
+    }
+  }
+
+  function addWalkInToRoster() {
+    setStatus("");
+    const lic = normalizeLicense(walkinLicense);
+    if (!isValidLicense(lic)) {
+      return setStatus("Enter full TREC license like 123456-SA (suffix required: -SA, -B, or -BB).");
+    }
+    if (!walkinFirst.trim() || !walkinLast.trim()) {
+      return setStatus("Enter first and last name for the walk-in.");
+    }
+
+    setRoster((prev) => {
+      const existingIdx = prev.findIndex((x) => normalizeLicense(x.trec_license) === lic);
+      const row: RosterRow = {
+        trec_license: lic,
+        first_name: walkinFirst.trim(),
+        last_name: walkinLast.trim(),
+        notes: walkinNotes.trim(),
+        payment_method: walkinPayMethod,
+        is_walkin: true,
+      };
+
+      if (existingIdx >= 0) {
+        const next = [...prev];
+        next[existingIdx] = { ...next[existingIdx], ...row };
+        return next;
+      }
+      return [row, ...prev];
+    });
+
+    setWalkinFirst("");
+    setWalkinLast("");
+    setWalkinLicense("");
+    setWalkinNotes("");
+    setWalkinPayMethod("pay_link");
+    setStatus("Walk-in added to roster.");
+  }
+
+
+  // Keep roster headshots refreshed (admin roster display)
+  useEffect(() => {
+    if (!supabase) return;
+    // Don't run when roster is empty
+    if (!roster.length) {
+      setRosterHeadshots({});
+      return;
+    }
+    refreshRosterHeadshots();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roster.length, authed]);
+
+
+  // =========================
+  // Auth
+  // =========================
+  async function ensureLicenseSavedToProfile(licRaw: string) {
+    if (!supabase) return;
+    const lic = normalizeLicense(licRaw);
+    if (!isValidLicense(lic)) return;
+    await supabase.auth.updateUser({ data: { trec_license: lic } });
+  }
+
+  async function login() {
+    setStatus("");
+    if (!supabase) return setStatus("Supabase is not connected.");
+    if (!email.trim()) return setStatus("Enter an email.");
+    if (!password.trim()) return setStatus("Enter a password.");
+
+    const lic = normalizeLicense(licenseInput);
+    if (!isValidLicense(lic)) return setStatus("Enter full TREC license number like 123456-SA (suffix required: -SA, -B, or -BB).");
+
+    const { error } = await supabase.auth.signInWithPassword({
+      email: email.trim().toLowerCase(),
+      password: password.trim(),
+    });
+    if (error) {
+      setScanResult({ kind: "error", message: error.message });
+      return setStatus(error.message);
+    }
+
+    await ensureLicenseSavedToProfile(lic);
+
+    setAuthed(true);
+    setAdminFromEmail(email);
+    setStatus("Logged in.");
+    await loadSessionFromSupabase();
+  }
+
+  async function createAccount() {
+    setStatus("");
+    if (!supabase) return setStatus("Supabase is not connected.");
+    if (!email.trim()) return setStatus("Enter an email.");
+    if (!password.trim() || password.trim().length < 8) return setStatus("Use a password with at least 8 characters.");
+
+    const lic = normalizeLicense(licenseInput);
+    if (!isValidLicense(lic)) return setStatus("Enter full TREC license number like 123456-SA (suffix required: -SA, -B, or -BB).");
+
+    const { error } = await supabase.auth.signUp({
+      email: email.trim().toLowerCase(),
+      password: password.trim(),
+      options: { data: { trec_license: lic } },
+    });
+    if (error) {
+      setScanResult({ kind: "error", message: error.message });
+      return setStatus(error.message);
+    }
+
+    setAuthed(true);
+    setAdminFromEmail(email);
+    setStatus("Account created.");
+    await loadSessionFromSupabase();
+  }
+
+  async function logout() {
+    if (supabase) await supabase.auth.signOut();
+    setAuthed(false);
+    setIsAdmin(false);
+    setPassword("");
+    setScanText("");
+    stopCamera();
+    setStatus("Logged out.");
+  }
+
+  async function forgotPassword() {
+    setStatus("");
+    if (!supabase) return setStatus("Supabase is not connected.");
+    const e = email.trim().toLowerCase();
+    if (!e) return setStatus("Enter your email first, then tap Forgot password.");
+
+    const { error } = await supabase.auth.resetPasswordForEmail(e, { redirectTo: window.location.origin });
+    if (error) {
+      setScanResult({ kind: "error", message: error.message });
+      return setStatus(error.message);
+    }
+
+    setStatus("Password reset email sent. Open it on this same device to set a new password.");
+  }
+
+  async function setPasswordFromRecovery() {
+    setStatus("");
+    if (!supabase) return setStatus("Supabase is not connected.");
+    if (!newPassword || newPassword.length < 8) return setStatus("New password must be at least 8 characters.");
+    if (newPassword !== newPassword2) return setStatus("Passwords do not match.");
+
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    if (error) {
+      setScanResult({ kind: "error", message: error.message });
+      return setStatus(error.message);
+    }
+
+    setRecoveryMode(false);
+    setNewPassword("");
+    setNewPassword2("");
+    setStatus("Password updated. Please log in.");
+  }
+
+  // =========================
+  // Admin: Create session in Supabase (Central timing defaults)
+  // =========================
+  const COURSE_TITLES = [
+    "Commercial Leasing 101™",
+    "Commercial Leasing Contracts 101™",
+    "Commercial  Letters of Intent 101 for Leasing & Sales™",
+    "Things You Need to Know About Practicing Law in Real Estate™",
+    "Deal Dynamics: Deciphering Commercial Real Estate Contracts™",
+    "Commercial Sales 101: From Client to Contract to Close™",
+    "Commercial Property Management 101 - (Apartments Not Included)™",
+    "Lights, Camera, Impact! REALTORS®  Guide to Success on Camera™",
+    "High Stakes: Seed-to-Sale Hemp Law Changes in Texas™ (3 hours)™",
+    "First, It's Not Marijuana: Hemp Laws & Texas Real Estate (2 hours)™",
+  ];
+
+  const [adminTitle, setAdminTitle] = useState(COURSE_TITLES[0]);
+  const [adminStart, setAdminStart] = useState<string>(() => {
+    const d = new Date();
+    // default to today at 9:00am Central-ish (local input uses local time)
+    d.setHours(9, 0, 0, 0);
+    return d.toISOString().slice(0, 16);
+  });
+  const [adminEnd, setAdminEnd] = useState<string>(() => {
+    const d = new Date();
+    d.setHours(17, 0, 0, 0);
+    return d.toISOString().slice(0, 16);
+  });
+
+  function computeSessionTimes(startLocal: string, endLocal: string) {
+    const start = new Date(startLocal);
+    const end = new Date(endLocal);
+
+    // Check-in open 30 mins before start; expires 30 mins after start
+    const checkinOpen = new Date(start.getTime() - 30 * 60 * 1000);
+    const checkinExp = new Date(start.getTime() + 30 * 60 * 1000);
+
+    // Check-out open 60 mins before end; expires 60 mins after end
+    const checkoutOpen = new Date(end.getTime() - 60 * 60 * 1000);
+    const checkoutExp = new Date(end.getTime() + 60 * 60 * 1000);
+
+    return { start, end, checkinOpen, checkinExp, checkoutOpen, checkoutExp };
+  }
+
+  async function createSessionInSupabase() {
+    setStatus("");
+    if (!supabase) return setStatus("Supabase is not connected.");
+
+    const { data } = await supabase.auth.getSession();
+    if (!data.session?.user) return setStatus("Log in first.");
+
+    if (!adminTitle.trim()) return setStatus("Select a class title.");
+    if (!adminStart) return setStatus("Select a start time.");
+    if (!adminEnd) return setStatus("Select an end time.");
+
+    const { start, end, checkinExp, checkoutExp } = computeSessionTimes(adminStart, adminEnd);
+    if (end.getTime() <= start.getTime()) return setStatus("End must be after Start.");
+
+    const s: Session = {
+      id: crypto.randomUUID(),
+      title: adminTitle.trim(),
+      startsAt: start.toISOString(),
+      endsAt: end.toISOString(),
+      checkinExpiresAt: checkinExp.toISOString(),
+      checkoutExpiresAt: checkoutExp.toISOString(),
+      checkinCode: randCode(),
+      checkoutCode: randCode(),
+    };
+
+    const { error } = await supabase.from("gg_sessions").insert([{ id: s.id, ...uiSessToDb(s) }]);
+    if (error) {
+      setScanResult({ kind: "error", message: error.message });
+      return setStatus(error.message);
+    }
+
+    await refreshSessions();
+    setActiveSessionId(s.id);
+    setStatus("Session created.");
+  }
+
+  // =========================
+  // Student: Submit scan / manual
+  // =========================
+  async function submitToken(method: "scan" | "manual", forceAction?: "checkin" | "checkout", tokenOverride?: string) {
+    setStatus("");
+    setScanResult(null);
+    if (!supabase) return setStatus("Supabase is not connected.");
+
+    const lic = normalizeLicense(licenseInput);
+    if (!isValidLicense(lic)) return setStatus("Enter full TREC license number like 123456-SA (suffix required: -SA, -B, or -BB).");
+    if (!activeSession) return setStatus("No active session yet.");
+
+    const raw = (tokenOverride ?? scanText).trim();
+    if (!raw) return setStatus(isAdmin ? "Paste token text or scan a QR code." : "Scan the QR code shown on the classroom screen.");
+
+    let payload: any = null;
+    try {
+      payload = JSON.parse(raw);
+    } catch {
+      return setStatus("Invalid token.");
+    }
+
+    const action = (forceAction || payload.action) as "checkin" | "checkout";
+    if (payload.sessionId !== activeSession.id) return setStatus("This QR code is for a different session.");
+    if (payload.code !== (action === "checkin" ? activeSession.checkinCode : activeSession.checkoutCode)) return setStatus("Invalid code.");
+    if (isExpired(payload.expiresAt)) return setStatus("This QR code has expired.");
+
+    const now = new Date().toISOString();
+    const patch: any = { session_id: activeSession.id, trec_license: lic };
+    if (action === "checkin") {
+      patch.checkin_at = now;
+      patch.method_checkin = method;
+    } else {
+      patch.checkout_at = now;
+      patch.method_checkout = method;
+    }
+
+    const { error } = await supabase.from("gg_attendance").upsert([patch], { onConflict: "session_id,trec_license" });
+    if (error) {
+      setScanResult({ kind: "error", message: error.message });
+      return setStatus(error.message);
+    }
+
+    await refreshAttendanceForActiveSession(activeSession.id);
+    setScanText("");
+    setStatus(action === "checkin" ? "Checked in!" : "Checked out!");
+    setScanResult({
+      kind: "success",
+      message: action === "checkin"
+        ? "✅ Success! Check-in recorded."
+        : "✅ Success! Check-out recorded.",
+    });
+  }
+
+  // =========================
+  // Camera scanning
+  // =========================
+  function clearScanLoop() {
+    if (scanTimerRef.current) {
+      window.clearTimeout(scanTimerRef.current);
+      scanTimerRef.current = null;
     }
   }
 
   function stopCamera() {
-    if (rafRef.current) {
-      cancelAnimationFrame(rafRef.current);
-      rafRef.current = null;
-    }
-    const video = videoRef.current;
-    if (video?.srcObject) {
-      const tracks = (video.srcObject as MediaStream).getTracks();
-      tracks.forEach((t) => t.stop());
-      video.srcObject = null;
-    }
+    clearScanLoop();
+    const v = videoRef.current;
+    const stream = v?.srcObject as MediaStream | null;
+    stream?.getTracks().forEach((t) => t.stop());
+    if (v) v.srcObject = null;
     setCameraOn(false);
   }
 
-  function tickScan() {
-    rafRef.current = requestAnimationFrame(tickScan);
-    const video = videoRef.current;
-    const canvas = canvasRef.current;
-    if (!video || !canvas) return;
-    if (video.readyState !== video.HAVE_ENOUGH_DATA) return;
+  async function startCamera() {
+    setStatus("");
+    setScanResult(null);
 
-    const size = 520; // square scan canvas
-    canvas.width = size;
-    canvas.height = size;
+    try {
+      // Request the stream first
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "environment" },
+        audio: false,
+      });
 
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
+      // Show the preview panel
+      setCameraOn(true);
 
-    // Draw center-crop square from video
-    const vw = video.videoWidth;
-    const vh = video.videoHeight;
-    if (!vw || !vh) return;
+      // Wait for the <video> to mount
+      await new Promise((r) => requestAnimationFrame(() => r(null)));
 
-    const s = Math.min(vw, vh);
-    const sx = (vw - s) / 2;
-    const sy = (vh - s) / 2;
-    ctx.drawImage(video, sx, sy, s, s, 0, 0, size, size);
+      let v = videoRef.current;
+      if (!v) {
+        await new Promise((r) => setTimeout(r, 50));
+        v = videoRef.current;
+      }
+      if (!v) throw new Error("Camera preview not ready.");
 
-    const imageData = ctx.getImageData(0, 0, size, size);
-    const code = jsQR(imageData.data, imageData.width, imageData.height);
+      v.srcObject = stream;
+      await v.play();
 
-    if (code?.data && !scanBusy) {
-      // attempt parse and apply
-      void handleScan(code.data);
+      // Start scanning loop
+      scanLoop();
+    } catch {
+      setCameraOn(false);
+      setStatus("Camera blocked/unavailable. Please allow camera permissions.");
+      setScanResult({ kind: "error", message: "Camera blocked/unavailable. Please allow camera permissions." });
     }
   }
 
-  async function handleScan(raw: string) {
-    if (!authUser) {
-      setScanStatus({ type: "fail", msg: "Please log in first." });
+  async function scanOnce(): Promise<string | null> {
+    // @ts-ignore
+    if (!("BarcodeDetector" in window)) return null;
+    const v = videoRef.current;
+    if (!v) return null;
+    if (!v.videoWidth || !v.videoHeight) return null;
+
+    // @ts-ignore
+    const detector = new window.BarcodeDetector({ formats: ["qr_code"] });
+
+    const canvas = document.createElement("canvas");
+    canvas.width = v.videoWidth;
+    canvas.height = v.videoHeight;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+
+    ctx.drawImage(v, 0, 0, canvas.width, canvas.height);
+    // @ts-ignore
+    const bitmap = await createImageBitmap(canvas);
+    const codes = await detector.detect(bitmap);
+    if (!codes || !codes.length) return null;
+
+    const raw = (codes[0] as any).rawValue as string | undefined;
+    return raw || null;
+  }
+
+  function scanLoop() {
+    clearScanLoop();
+
+    // @ts-ignore
+    if (!("BarcodeDetector" in window)) {
+      setStatus("This browser can't scan QR codes. Try Chrome/Safari on mobile.");
       return;
     }
-    if (!raw) return;
 
-    setScanBusy(true);
-    try {
-      // We expect raw to be either JSON payload or a URL/data URI that contains JSON
-      let payloadText = raw;
-
-      // If it's a data URI we created (data:text/plain,...)
-      const prefix = "data:text/plain,";
-      if (payloadText.startsWith(prefix)) {
-        payloadText = decodeURIComponent(payloadText.slice(prefix.length));
-      }
-
-      let payload: any = null;
+    const tick = async () => {
+      if (!cameraOn) return;
       try {
-        payload = JSON.parse(payloadText);
+        const raw = await scanOnce();
+        if (raw) {
+          setScanText(raw);
+          stopCamera();
+          await submitToken("scan", undefined, raw);
+          return;
+        }
       } catch {
-        // Not valid
-        setScanStatus({ type: "fail", msg: "Failure — QR code not recognized." });
-        return;
+        // ignore
       }
+      scanTimerRef.current = window.setTimeout(tick, 700);
+    };
 
-      const sessionId = payload?.session_id;
-      const action = payload?.action;
-      if (!sessionId || (action !== "checkin" && action !== "checkout")) {
-        setScanStatus({ type: "fail", msg: "Failure — QR code not recognized." });
-        return;
-      }
-
-      // Use student license from metadata (preferred) else input
-      const lic = normalizeLicense((authUser.user_metadata?.trec_license || trecLicense || "").toString());
-      if (!lic) {
-        setScanStatus({ type: "fail", msg: "Please add TREC License to the account first." });
-        return;
-      }
-
-      // Update roster row for that session+license; if row doesn't exist, create it with names from metadata
-      const now = isoNow();
-      const meta = authUser.user_metadata || {};
-      const baseRow: Partial<RosterRow> = {
-        session_id: sessionId,
-        trec_license: lic,
-        first_name: toTitleCase((meta.first_name || "").toString() || firstName),
-        middle_initial: (meta.middle_initial || "").toString() || null,
-        last_name: toTitleCase((meta.last_name || "").toString() || lastName),
-        payment: null,
-        status: "present",
-        absent: false,
-      };
-
-      // Upsert then patch times
-      await supabase.from("gg_roster").upsert([baseRow], { onConflict: "session_id,trec_license" });
-
-      if (action === "checkin") {
-        await updateRosterRow(sessionId, lic, { checkin_at: now, status: "present", absent: false });
-        setScanStatus({ type: "ok", msg: "Success — checked in!" });
-      } else {
-        await updateRosterRow(sessionId, lic, { checkout_at: now });
-        setScanStatus({ type: "ok", msg: "Success — checked out!" });
-      }
-    } catch {
-      setScanStatus({ type: "fail", msg: "Failure — try again." });
-    } finally {
-      // brief lockout to prevent repeat scans
-      setTimeout(() => setScanBusy(false), 1200);
-    }
+    scanTimerRef.current = window.setTimeout(tick, 350);
   }
 
-  // ===== UI =====
-  const header = (
-    <div
-      style={{
-        background: "#fff",
-        borderBottom: "1px solid #e6e6e6",
-        padding: "14px 16px",
-      }}
-    >
-      <div
-        style={{
-          maxWidth: 1050,
-          margin: "0 auto",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 12,
-        }}
-      >
-        <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-          <img
-            src="/ggsore-logo.png"
-            alt="The Guillory Group School of Real Estate"
-            style={{ width: 44, height: 44, objectFit: "contain" }}
-          />
-          <div>
-            <div style={{ fontWeight: 900, fontSize: 15, lineHeight: 1.1 }}>
-              The Guillory Group School of Real Estate
-              <div style={{ fontWeight: 900, fontSize: 15 }}>Student Attendance App</div>
-            </div>
-            <div style={{ fontSize: 12, opacity: 0.85, marginTop: 2 }}>
+  // =========================
+  // Derived UI
+  // =========================
+  const canSeeAdminTab = isAdmin;
+
+  const rosterMap = useMemo(() => {
+    const m = new Map<string, RosterRow>();
+    roster.forEach((r) => m.set(r.trec_license, r));
+    return m;
+  }, [roster]);
+
+  const attendanceMap = useMemo(() => {
+    const m = new Map<string, Attendance>();
+    attendance.forEach((a) => m.set(a.trec_license, a));
+    return m;
+  }, [attendance]);
+
+  const checkedInCount = useMemo(() => attendance.filter((a) => Boolean(a.checkin_at)).length, [attendance]);
+  const checkedOutCount = useMemo(() => attendance.filter((a) => Boolean(a.checkout_at)).length, [attendance]);
+
+  // =========================
+  // UI
+  // =========================
+  return (
+    <div style={{ minHeight: "100vh", background: "#f7f7f8", padding: 16, fontFamily: "Century Gothic, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif" }}>
+      <div style={{ maxWidth: 980, margin: "0 auto" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
+          <img src="/ggsore-logo.png" alt="The Guillory Group School of Real Estate" style={{ width: 54, height: 54, borderRadius: 14, objectFit: "contain" }} />
+          <div style={{ flex: 1, minWidth: 240 }}>
+            <div style={{ fontSize: 22, fontWeight: 900, marginBottom: 2 }}>The Guillory Group School of Real Estate Student Attendance App</div>
+            <div style={{ opacity: 0.75, fontSize: 13 }}>
               TREC Education Provider #9998-CEP
             </div>
           </div>
         </div>
 
-        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        <div className="tabs" role="tablist" aria-label="App sections" style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
           <button
-            onClick={() => setMode("student")}
+            onClick={() => setTab("student")}
             style={{
-              ...btnStyle(mode === "student" ? BRAND_RED : "#f1f1f1", mode === "student" ? "#fff" : "#111"),
-              border: mode === "student" ? `1px solid ${BRAND_RED}` : "1px solid #ddd",
+              padding: "12px 16px",
+              borderRadius: 999,
+              border: "1px solid #ddd",
+              background: tab === "student" ? BRAND_RED : "#fff",
+              color: tab === "student" ? "#fff" : "#111",
+              fontWeight: 900,
             }}
           >
             Student
           </button>
-          <button
-            onClick={() => setMode("admin")}
-            style={{
-              ...btnStyle(mode === "admin" ? BRAND_RED : "#f1f1f1", mode === "admin" ? "#fff" : "#111"),
-              border: mode === "admin" ? `1px solid ${BRAND_RED}` : "1px solid #ddd",
-            }}
-          >
-            Admin / Instructor
-          </button>
-          {authUser && (
-            <button onClick={logout} style={{ ...btnStyle(BRAND_RED) }}>
-              Log out
+
+          {canSeeAdminTab && (
+            <button
+              onClick={() => setTab("admin")}
+              style={{
+                padding: "12px 16px",
+                borderRadius: 999,
+                border: "1px solid #ddd",
+                background: tab === "admin" ? BRAND_RED : "#fff",
+                color: tab === "admin" ? "#fff" : "#111",
+                fontWeight: 900,
+              }}
+            >
+              Admin / Instructor
             </button>
           )}
         </div>
-      </div>
-    </div>
-  );
 
-  if (authLoading) {
-    return (
-      <div style={{ fontFamily: FONT_STACK, padding: 20 }}>
-        Loading…
-      </div>
-    );
-  }
-
-  return (
-    <div style={{ minHeight: "100vh", background: "#f7f7f8", fontFamily: FONT_STACK }}>
-      {header}
-
-      <div style={{ maxWidth: 1050, margin: "0 auto", padding: 16 }}>
-        {mode === "student" ? (
-          <div style={{ display: "grid", gap: 14 }}>
-            {!authUser ? (
-              <div style={subtleCard()}>
-                <h2 style={{ marginTop: 0, marginBottom: 8 }}>Student Login</h2>
-
-                <div style={{ display: "grid", gap: 10, maxWidth: 520 }}>
-                  <label style={{ fontWeight: 800 }}>Email</label>
-                  <input
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    style={{ padding: 12, borderRadius: 12, border: "1px solid #ccc" }}
-                    placeholder="name@example.com"
-                    autoComplete="email"
-                  />
-
-                  <label style={{ fontWeight: 800 }}>Password</label>
-                  <div style={{ display: "flex", gap: 8 }}>
-                    <input
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      style={{ flex: 1, padding: 12, borderRadius: 12, border: "1px solid #ccc" }}
-                      type={showPw ? "text" : "password"}
-                      placeholder=""
-                      autoComplete="current-password"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPw((v) => !v)}
-                      style={{ ...btnStyle("#f1f1f1", "#111") }}
-                      aria-label={showPw ? "Hide password" : "Show password"}
-                    >
-                      {showPw ? "Hide" : "Show"}
-                    </button>
-                  </div>
-
-                  <label style={{ fontWeight: 800 }}>TREC License</label>
-                  <input
-                    value={trecLicense}
-                    onChange={(e) => setTrecLicense(e.target.value)}
-                    style={{ padding: 12, borderRadius: 12, border: "1px solid #ccc" }}
-                    placeholder="123456-SA"
-                  />
-
-                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                    <button onClick={loginStudent} style={btnStyle(BRAND_RED)}>
-                      Log in
-                    </button>
-                  </div>
-
-                  <div style={{ borderTop: "1px solid #eee", paddingTop: 12, marginTop: 6 }}>
-                    <div style={{ fontWeight: 900, marginBottom: 6 }}>Create an account</div>
-
-                    <div style={{ display: "grid", gap: 10 }}>
-                      <div style={{ display: "grid", gap: 8, gridTemplateColumns: "1fr 90px 1fr" }}>
-                        <div style={{ display: "grid", gap: 6 }}>
-                          <label style={{ fontWeight: 800 }}>First Name</label>
-                          <input
-                            value={firstName}
-                            onChange={(e) => setFirstName(e.target.value)}
-                            style={{ padding: 12, borderRadius: 12, border: "1px solid #ccc" }}
-                          />
-                        </div>
-
-                        <div style={{ display: "grid", gap: 6 }}>
-                          <label style={{ fontWeight: 800 }}>M.I.</label>
-                          <input
-                            value={middleInitial}
-                            onChange={(e) => setMiddleInitial(e.target.value)}
-                            style={{ padding: 12, borderRadius: 12, border: "1px solid #ccc", textTransform: "uppercase" }}
-                            maxLength={1}
-                          />
-                        </div>
-
-                        <div style={{ display: "grid", gap: 6 }}>
-                          <label style={{ fontWeight: 800 }}>Last Name</label>
-                          <input
-                            value={lastName}
-                            onChange={(e) => setLastName(e.target.value)}
-                            style={{ padding: 12, borderRadius: 12, border: "1px solid #ccc" }}
-                          />
-                        </div>
-                      </div>
-
-                      <div style={{ fontSize: 12, opacity: 0.85 }}>
-                        Name should match the name shown on the TREC license.
-                      </div>
-
-                      <button onClick={signUpStudent} style={btnStyle("#1167b1")}>
-                        Create Account
-                      </button>
-                    </div>
-                  </div>
-
-                  {studentMsg && (
-                    <div style={{ marginTop: 10, padding: 10, borderRadius: 12, background: "#fff7d6", border: "1px solid #f0dca3" }}>
-                      {studentMsg}
-                    </div>
-                  )}
-                </div>
-              </div>
-            ) : (
-              <>
-                <div style={subtleCard()}>
-                  <div style={{ display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap" }}>
-                    {headshotSignedUrl ? (
-                      <img
-                        src={headshotSignedUrl}
-                        alt="Headshot"
-                        style={{
-                          width: 80,
-                          height: 106,
-                          objectFit: "cover",
-                          objectPosition: "center top",
-                          borderRadius: 10,
-                          border: "1px solid #ddd",
-                        }}
-                      />
-                    ) : (
-                      <div
-                        style={{
-                          width: 80,
-                          height: 106,
-                          borderRadius: 10,
-                          border: "1px dashed #bbb",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          fontWeight: 900,
-                          opacity: 0.7,
-                        }}
-                      >
-                        No photo
-                      </div>
-                    )}
-
-                    <div style={{ minWidth: 260 }}>
-                      <div style={{ fontWeight: 900, fontSize: 16 }}>
-                        Welcome to class, {toTitleCase((authUser.user_metadata?.first_name || "").toString() || "Student")}!
-                      </div>
-                      <div style={{ fontSize: 12, opacity: 0.85 }}>
-                        Logged in. Ready to check in and check out.
-                      </div>
-                    </div>
-
-                    <div style={{ flex: 1 }} />
-
-                    <div style={{ display: "grid", gap: 10 }}>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={(e) => {
-                          const f = e.target.files?.[0];
-                          if (f) setPendingHeadshot(f);
-                        }}
-                      />
-
-                      {pendingHeadshot && (
-                        <div style={{ display: "grid", gap: 8 }}>
-                          <div style={{ fontSize: 12, opacity: 0.85 }}>Selected photo preview:</div>
-                          <img
-                            src={URL.createObjectURL(pendingHeadshot)}
-                            alt="Headshot preview"
-                            style={{
-                              width: 120,
-                              height: 160,
-                              objectFit: "cover",
-                              objectPosition: "center top",
-                              borderRadius: 12,
-                              border: "1px solid #ddd",
-                            }}
-                          />
-
-                          <button
-                            disabled={!pendingHeadshot || headshotUploading}
-                            onClick={async () => {
-                              if (!pendingHeadshot) return;
-                              await uploadHeadshot(pendingHeadshot);
-                            }}
-                            style={{
-                              ...btnStyle(BRAND_RED),
-                              opacity: pendingHeadshot ? 1 : 0.5,
-                            }}
-                          >
-                            {headshotUploading ? "Uploading..." : "Upload Photo"}
-                          </button>
-                        </div>
-                      )}
-
-                      <div style={{ fontSize: 11, opacity: 0.85 }}>
-                        Use a clear, front-facing photo (no hats/sunglasses if possible).
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div style={subtleCard()}>
-                  <h3 style={{ marginTop: 0 }}>Check In / Check Out</h3>
-
-                  <div style={{ display: "grid", gap: 10, maxWidth: 720 }}>
-                    <div style={{ fontSize: 12, opacity: 0.85 }}>
-                      When the camera opens, hold the QR code steady in the frame.
-                    </div>
-
-                    <div
-                      style={{
-                        width: "100%",
-                        maxWidth: 520,
-                        aspectRatio: "1 / 1",
-                        borderRadius: 16,
-                        border: "1px solid #ddd",
-                        overflow: "hidden",
-                        background: "#000",
-                        position: "relative",
-                      }}
-                    >
-                      <video
-                        ref={videoRef}
-                        style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                        muted
-                        playsInline
-                      />
-                      <canvas ref={canvasRef} style={{ display: "none" }} />
-                    </div>
-
-                    <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                      {!cameraOn ? (
-                        <button onClick={startCamera} style={btnStyle("#1167b1")}>
-                          Open Scanner
-                        </button>
-                      ) : (
-                        <button onClick={stopCamera} style={btnStyle("#03254c")}>
-                          Close Scanner
-                        </button>
-                      )}
-                    </div>
-
-                    {scanStatus && (
-                      <div
-                        style={{
-                          padding: 12,
-                          borderRadius: 16,
-                          border: "1px solid #ddd",
-                          background: "#fff",
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 12,
-                          maxWidth: 520,
-                        }}
-                      >
-                        <div
-                          style={{
-                            width: 34,
-                            height: 34,
-                            borderRadius: 999,
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            background: scanStatus.type === "ok" ? "#2e7d32" : "#b71c1c",
-                            color: "#fff",
-                            fontWeight: 900,
-                            fontSize: 18,
-                          }}
-                        >
-                          {scanStatus.type === "ok" ? "✓" : "!"}
-                        </div>
-                        <div style={{ fontWeight: 900 }}>{scanStatus.msg}</div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </>
-            )}
+        {status && (
+          <div style={{ background: "#fff", border: "1px solid #eee", borderRadius: 16, padding: 12, marginBottom: 12 }} aria-live="polite">
+            {status}
           </div>
-        ) : (
-          <div style={{ display: "grid", gap: 14 }}>
-            {!isAdmin ? (
-              <div style={subtleCard()}>
-                <h2 style={{ marginTop: 0 }}>Admin / Instructor</h2>
-                <div style={{ opacity: 0.85 }}>
-                  This page is restricted. Log in with an admin account.
+        )}
+
+        {/* =========================
+           Auth / Profile
+        ========================= */}
+        <div style={{ background: "#fff", border: "1px solid #eee", borderRadius: 16, padding: 16, marginBottom: 12 }}>
+          <div style={{ display: "grid", gap: 10 }}>
+            <div style={{ display: "grid", gap: 6 }}>
+              <label style={{ fontWeight: 800 }}>Email</label>
+              <input
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="name@email.com"
+                style={{ height: 52, borderRadius: 14, border: "1px solid #ddd", padding: "0 12px", fontSize: 16 }}
+              />
+            </div>
+
+            {!recoveryMode && (
+              <div style={{ display: "grid", gap: 6 }}>
+                <label style={{ fontWeight: 800 }}>Password</label>
+                <input
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  type="password"
+                  placeholder="••••••••"
+                  style={{ height: 52, borderRadius: 14, border: "1px solid #ddd", padding: "0 12px", fontSize: 16 }}
+                />
+              </div>
+            )}
+
+            <div style={{ display: "grid", gap: 6 }}>
+              <label style={{ fontWeight: 800 }}>TREC License Number</label>
+              <div style={{ fontSize: 12, opacity: 0.8 }}>
+                Numeric portion is 6–7 digits. Suffix required: <b>-SA</b>, <b>-B</b>, or <b>-BB</b>. Example: <b>0123456-SA</b>
+              </div>
+              <input
+                value={licenseInput}
+                onChange={(e) => setLicenseInput(e.target.value)}
+                placeholder="0123456-SA"
+                style={{ height: 52, borderRadius: 14, border: "1px solid #ddd", padding: "0 12px", fontSize: 16 }}
+              />
+            </div>
+
+            {recoveryMode ? (
+              <div style={{ borderTop: "1px solid #eee", paddingTop: 12, marginTop: 6 }}>
+                <div style={{ fontWeight: 900, marginBottom: 8 }}>Create New Password</div>
+                <input
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  type="password"
+                  placeholder="New password (8+ characters)"
+                  style={{ height: 52, borderRadius: 14, border: "1px solid #ddd", padding: "0 12px", fontSize: 16, marginBottom: 10 }}
+                />
+                <input
+                  value={newPassword2}
+                  onChange={(e) => setNewPassword2(e.target.value)}
+                  type="password"
+                  placeholder="Confirm new password"
+                  style={{ height: 52, borderRadius: 14, border: "1px solid #ddd", padding: "0 12px", fontSize: 16, marginBottom: 12 }}
+                />
+
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                  <button
+                    onClick={setPasswordFromRecovery}
+                    style={{ padding: "12px 16px", borderRadius: 12, border: "1px solid #8B0000", background: "#8B0000", color: "#fff", fontWeight: 900 }}
+                  >
+                    Set New Password
+                  </button>
+                  <button
+                    onClick={() => setRecoveryMode(false)}
+                    style={{ padding: "12px 16px", borderRadius: 12, border: "1px solid #ddd", background: "#fff", fontWeight: 900 }}
+                  >
+                    Back to login
+                  </button>
                 </div>
               </div>
             ) : (
-              <>
-                {adminNote && (
-                  <div style={{ padding: 10, borderRadius: 12, background: "#fff7d6", border: "1px solid #f0dca3" }}>
-                    {adminNote}
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 6 }}>
+                {!authed ? (
+                  <>
+                    <button
+                      onClick={login}
+                      style={{ padding: "12px 16px", borderRadius: 12, border: "1px solid #8B0000", background: "#8B0000", color: "#fff", fontWeight: 900 }}
+                    >
+                      Log In
+                    </button>
+                    <button
+                      onClick={createAccount}
+                      style={{ padding: "12px 16px", borderRadius: 12, border: "1px solid #ddd", background: "#fff", fontWeight: 900 }}
+                    >
+                      Create Account
+                    </button>
+                    <button
+                      onClick={forgotPassword}
+                      style={{ padding: "12px 16px", borderRadius: 12, border: "1px solid #ddd", background: "#fff", fontWeight: 900 }}
+                    >
+                      Forgot password
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    onClick={logout}
+                    style={{ padding: "12px 16px", borderRadius: 12, border: "1px solid #ddd", background: "#fff", fontWeight: 900 }}
+                  >
+                    Log out
+                  </button>
+                )}
+              </div>
+            )}
+
+            <div style={{ fontSize: 11, opacity: 0.8, marginTop: 6 }}>
+              Identity verification is required for CE attendance under TREC Rule §535.65.{" "}
+              <a href={TREC_RULES_URL} target="_blank" rel="noreferrer" style={{ fontWeight: 900 }}>
+                Learn More
+              </a>
+            </div>
+          </div>
+        </div>
+
+        {/* =========================
+           STUDENT TAB
+        ========================= */}
+        {tab === "student" && (
+          <>
+            {/* Headshot Upload */}
+            <div style={{ background: "#fff", border: "1px solid #eee", borderRadius: 16, padding: 16, marginBottom: 12 }}>
+              <div style={{ fontWeight: 900, fontSize: 16, marginBottom: 6 }}>Headshot</div>
+              <div style={{ fontSize: 12, opacity: 0.85, marginBottom: 10 }}>
+                A clear headshot helps verify identity for CE attendance (no driver license uploads needed).
+              </div>
+
+              <div style={{ display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap" }}>
+                {headshotSignedUrl ? (
+                  <img
+                    src={headshotSignedUrl}
+                    alt="Headshot"
+                    style={{
+                      width: 90,
+                      height: 120,
+                      objectFit: "cover",
+                      objectPosition: "center top",
+                      borderRadius: 12,
+                      border: "1px solid #ddd",
+                    }}
+                  />
+                ) : (
+                  <div
+                    style={{
+                      width: 90,
+                      height: 120,
+                      borderRadius: 12,
+                      border: "1px dashed #bbb",
+                      display: "grid",
+                      placeItems: "center",
+                      opacity: 0.75,
+                      fontSize: 12,
+                    }}
+                  >
+                    No photo
                   </div>
                 )}
 
-                <div style={subtleCard()}>
-                  <div style={{ fontWeight: 900, fontSize: 16, marginBottom: 10 }}>Create Session</div>
+                <div style={{ display: "grid", gap: 10 }}>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0] || null;
+                      setPendingHeadshot(f);
+                    }}
+                  />
 
-                  <div
+                  {pendingHeadshot && (
+                    <img
+                      src={URL.createObjectURL(pendingHeadshot)}
+                      alt="Selected headshot preview"
+                      style={{
+                        width: 140,
+                        height: 186,
+                        objectFit: "cover",
+                        objectPosition: "center top",
+                        borderRadius: 12,
+                        border: "1px solid #ddd",
+                      }}
+                    />
+                  )}
+
+                  <button
+                    disabled={!pendingHeadshot || headshotUploading || !authed}
+                    onClick={async () => {
+                      if (!pendingHeadshot) return;
+                      await uploadHeadshot(pendingHeadshot);
+                      setPendingHeadshot(null);
+                    }}
                     style={{
-                      display: "grid",
-                      gap: 10,
-                      gridTemplateColumns: "minmax(240px, 1fr) 1fr 1fr auto",
-                      alignItems: "end",
+                      padding: "12px 16px",
+                      borderRadius: 12,
+                      border: `1px solid ${BRAND_RED}`,
+                      background: BRAND_RED,
+                      color: "#fff",
+                      fontWeight: 900,
+                      opacity: !authed || !pendingHeadshot || headshotUploading ? 0.6 : 1,
                     }}
                   >
-                    <div style={{ display: "grid", gap: 6 }}>
-                      <label style={{ fontWeight: 800 }}>Class Title</label>
-                      <select
-                        value={newTitle}
-                        onChange={(e) => setNewTitle(e.target.value)}
-                        style={{ padding: 12, borderRadius: 12, border: "1px solid #ccc" }}
+                    {headshotUploading ? "Uploading..." : authed ? "Upload Photo" : "Log in to upload"}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Student Scan Panel */}
+            <div style={{ background: "#fff", border: "1px solid #eee", borderRadius: 16, padding: 16 }}>
+              <h3 style={{ marginTop: 0 }}>Check In / Check Out</h3>
+
+              {!authed ? (
+                <div style={{ opacity: 0.85 }}>Log in first, then scan the QR code shown on the classroom screen.</div>
+              ) : !activeSession ? (
+                <div style={{ opacity: 0.85 }}>No class session is active yet. Please wait for the instructor to open today’s session.</div>
+              ) : (
+                <>
+                  <div style={{ fontSize: 12, opacity: 0.85, marginBottom: 10 }}>
+                    Active session: <b>{activeSession.title}</b> — {formatCentral(activeSession.startsAt)}
+                  </div>
+      {scanResult && (
+        <div
+          role="status"
+          aria-live="polite"
+          style={{
+            marginBottom: 12,
+            borderRadius: 16,
+            padding: "14px 16px",
+            border: scanResult.kind === "success" ? "1px solid #0a7a2f" : "1px solid #b00020",
+            background: scanResult.kind === "success" ? "#e8f5ec" : "#fde8ea",
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+            fontWeight: 900,
+          }}
+        >
+          <div
+            style={{
+              width: 34,
+              height: 34,
+              borderRadius: 999,
+              display: "grid",
+              placeItems: "center",
+              background: scanResult.kind === "success" ? "#0a7a2f" : "#b00020",
+              color: "#fff",
+              fontSize: 18,
+            }}
+          >
+            {scanResult.kind === "success" ? "✓" : "!"}
+          </div>
+          <div>{scanResult.message}</div>
+        </div>
+      )}
+
+
+                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
+                    {!cameraOn ? (
+                      <button
+                        onClick={startCamera}
+                        style={{
+                          padding: "14px 18px",
+                          borderRadius: 14,
+                          border: `1px solid ${BRAND_RED}`,
+                          background: BRAND_RED,
+                          color: "#fff",
+                          fontWeight: 900,
+                          fontSize: 16,
+                        }}
                       >
-                        {CLASS_TITLES.map((t) => (
-                          <option key={t} value={t}>
-                            {t}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
+                        Turn On Camera
+                      </button>
+                    ) : (
+                      <button
+                        onClick={stopCamera}
+                        style={{
+                          padding: "14px 18px",
+                          borderRadius: 14,
+                          border: "1px solid #ddd",
+                          background: "#fff",
+                          fontWeight: 900,
+                          fontSize: 16,
+                        }}
+                      >
+                        Stop Camera
+                      </button>
+                    )}
 
-                    <div style={{ display: "grid", gap: 6 }}>
-                      <label style={{ fontWeight: 800 }}>Start</label>
-                      <input
-                        type="datetime-local"
-                        value={newStartsLocal}
-                        onChange={(e) => setNewStartsLocal(e.target.value)}
-                        style={{ padding: 12, borderRadius: 12, border: "1px solid #ccc" }}
-                      />
-                    </div>
+                    <button
+                      onClick={() => submitToken("manual", "checkin")}
+                      style={{
+                        padding: "14px 18px",
+                        borderRadius: 14,
+                        border: `1px solid ${BRAND_RED}`,
+                        background: "#fff",
+                        color: BRAND_RED,
+                        fontWeight: 900,
+                        fontSize: 16,
+                      }}
+                    >
+                      Manual Check-In
+                    </button>
 
-                    <div style={{ display: "grid", gap: 6 }}>
-                      <label style={{ fontWeight: 800 }}>End</label>
-                      <input
-                        type="datetime-local"
-                        value={newEndsLocal}
-                        onChange={(e) => setNewEndsLocal(e.target.value)}
-                        style={{ padding: 12, borderRadius: 12, border: "1px solid #ccc" }}
-                      />
-                    </div>
-
-                    <button onClick={createSession} style={btnStyle(BRAND_RED)}>
-                      Create
+                    <button
+                      onClick={() => submitToken("manual", "checkout")}
+                      style={{
+                        padding: "14px 18px",
+                        borderRadius: 14,
+                        border: `1px solid ${BRAND_RED}`,
+                        background: "#fff",
+                        color: BRAND_RED,
+                        fontWeight: 900,
+                        fontSize: 16,
+                      }}
+                    >
+                      Manual Check-Out
                     </button>
                   </div>
 
-                  <div style={{ marginTop: 12, borderTop: "1px solid #eee", paddingTop: 12 }}>
-                    <div style={{ fontWeight: 900, marginBottom: 8 }}>Select Session</div>
+                  {/* Always render video element (so ref always exists) */}
+                  <div style={{ border: "1px solid #eee", borderRadius: 16, padding: 12, display: cameraOn ? "block" : "none" }}>
+                    <div style={{ fontSize: 12, opacity: 0.85, marginBottom: 8 }}>
+                      Camera preview (aim at the QR code)
+                    </div>
+                    <video ref={videoRef} style={{ width: "100%", maxWidth: 520, borderRadius: 14 }} playsInline muted />
+                    <div style={{ fontSize: 12, opacity: 0.75, marginTop: 8 }}>
+                      Scanning is automatic once the camera is on.
+                    </div>
+                  </div>
 
-                    <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-                      <select
-                        value={selectedSessionId}
-                        onChange={(e) => setSelectedSessionId(e.target.value)}
-                        style={{ padding: 12, borderRadius: 12, border: "1px solid #ccc", minWidth: 320, maxWidth: "100%" }}
+                  {/* Admin-only token paste fallback */}
+                  {isAdmin && (
+                    <div style={{ marginTop: 12 }}>
+                      <label style={{ fontWeight: 900 }}>QR Token (admin fallback)</label>
+                      <textarea
+                        value={scanText}
+                        onChange={(e) => setScanText(e.target.value)}
+                        placeholder="Paste QR token text here if scanning fails"
+                        style={{
+                          width: "100%",
+                          minHeight: 92,
+                          borderRadius: 14,
+                          border: "1px solid #ddd",
+                          padding: 12,
+                          fontSize: 14,
+                          marginTop: 6,
+                        }}
+                      />
+                      <button
+                        onClick={() => submitToken("scan")}
+                        style={{
+                          marginTop: 10,
+                          padding: "12px 16px",
+                          borderRadius: 12,
+                          border: `1px solid ${BRAND_RED}`,
+                          background: BRAND_RED,
+                          color: "#fff",
+                          fontWeight: 900,
+                        }}
                       >
-                        <option value="">— Select —</option>
-                        {sessions.map((s) => (
-                          <option key={s.id} value={s.id}>
-                            {s.title} — {s.starts_at ? new Date(s.starts_at).toLocaleString() : ""}
-                          </option>
-                        ))}
-                      </select>
-
-                      <button onClick={loadSessions} style={btnStyle("#f1f1f1", "#111")} disabled={sessionsLoading}>
-                        {sessionsLoading ? "Refreshing..." : "Refresh Sessions"}
+                        Submit Token
                       </button>
                     </div>
+                  )}
+                </>
+              )}
+            </div>
+          </>
+        )}
 
-                    {selectedSession && (
-                      <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
-                        <span style={badgeStyle("#f1f1f1", "#111")}>
-                          Session
-                        </span>
-                        <span style={badgeStyle("#f1f1f1", "#111")}>
-                          {selectedSession.title}
-                        </span>
-                        <span style={badgeStyle("#f1f1f1", "#111")}>
-                          {selectedSession.starts_at ? new Date(selectedSession.starts_at).toLocaleString() : ""} —{" "}
-                          {selectedSession.ends_at ? new Date(selectedSession.ends_at).toLocaleString() : ""}
-                        </span>
-                      </div>
-                    )}
+        {/* =========================
+           ADMIN TAB
+        ========================= */}
+        {tab === "admin" && canSeeAdminTab && (
+          <div style={{ background: "#fff", border: "1px solid #eee", borderRadius: 16, padding: 16 }}>
+            <h2 style={{ marginTop: 0 }}>Admin / Instructor</h2>
+
+            <div style={{ background: BRAND_RED, color: "#fff", borderRadius: 16, padding: 16, marginBottom: 12 }}>
+              <div style={{ display: "grid", gap: 12 }}>
+                <div>
+                  <label style={{ color: "#fff", fontWeight: 900 }}>CLASS TITLE</label>
+                  <select
+                    value={adminTitle}
+                    onChange={(e) => setAdminTitle(e.target.value)}
+                    style={{ width: "100%", height: 50, borderRadius: 12, border: "1px solid rgba(255,255,255,0.35)", padding: "0 12px", marginTop: 6, fontSize: 16 }}
+                  >
+                    {COURSE_TITLES.map((t) => (
+                      <option key={t} value={t}>
+                        {t}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                  <div>
+                    <label style={{ color: "#fff", fontWeight: 900 }}>START</label>
+                    <input
+                      type="datetime-local"
+                      value={adminStart}
+                      onChange={(e) => setAdminStart(e.target.value)}
+                      style={{ width: "100%", height: 50, borderRadius: 12, border: "1px solid rgba(255,255,255,0.35)", padding: "0 12px", marginTop: 6, fontSize: 16 }}
+                    />
+                    <div style={{ fontSize: 11, opacity: 0.9, marginTop: 4 }}>Central Time</div>
+                  </div>
+
+                  <div>
+                    <label style={{ color: "#fff", fontWeight: 900 }}>END</label>
+                    <input
+                      type="datetime-local"
+                      value={adminEnd}
+                      onChange={(e) => setAdminEnd(e.target.value)}
+                      style={{ width: "100%", height: 50, borderRadius: 12, border: "1px solid rgba(255,255,255,0.35)", padding: "0 12px", marginTop: 6, fontSize: 16 }}
+                    />
+                    <div style={{ fontSize: 11, opacity: 0.9, marginTop: 4 }}>Central Time</div>
                   </div>
                 </div>
 
-                <div style={subtleCard()}>
-                  <div style={{ fontWeight: 900, fontSize: 16, marginBottom: 8 }}>Roster CSV Import</div>
-                  <div style={{ fontSize: 12, opacity: 0.85, marginBottom: 10 }}>
-                    CSV headers expected (in any order): photo, trec_license, first_name, middle_initial, last_name, payment, checkin_at, checkout_at, status
+                <button
+                  onClick={createSessionInSupabase}
+                  style={{
+                    padding: "12px 16px",
+                    borderRadius: 12,
+                    border: "1px solid rgba(255,255,255,0.35)",
+                    background: "#8B0000",
+                    color: "#fff",
+                    fontWeight: 900,
+                  }}
+                >
+                  Create New Class Session
+                </button>
+              </div>
+            </div>
+
+            <div style={{ display: "grid", gap: 12, marginBottom: 12 }}>
+              <div>
+                <b style={{ fontSize: 16 }}>Active Session</b>
+                <div style={{ fontSize: 12, opacity: 0.75, marginTop: 4 }}>
+                  Select the class session for today.
+                </div>
+              </div>
+
+              <select
+                value={activeSessionId}
+                onChange={(e) => setActiveSessionId(e.target.value)}
+                style={{ height: 56, borderRadius: 18, border: "1px solid #ddd", fontSize: 16, padding: "0 14px" }}
+              >
+                {sessions.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.title} — {formatCentral(s.startsAt)}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {activeSession && (
+              <>
+                <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
+                  <div style={{ background: "#f8f8f9", border: "1px solid #eee", borderRadius: 16, padding: 12, minWidth: 220 }}>
+                    <div style={{ fontWeight: 900, marginBottom: 6 }}>Check-In QR</div>
+                    {checkinQrUrl && <img src={checkinQrUrl} alt="Check-in QR" style={{ width: "100%", maxWidth: 320, borderRadius: 12 }} />}
+                    <div style={{ fontSize: 12, opacity: 0.8, marginTop: 6 }}>
+                      Expires: {formatCentral(activeSession.checkinExpiresAt)}
+                    </div>
                   </div>
 
-                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+                  <div style={{ background: "#f8f8f9", border: "1px solid #eee", borderRadius: 16, padding: 12, minWidth: 220 }}>
+                    <div style={{ fontWeight: 900, marginBottom: 6 }}>Check-Out QR</div>
+                    {checkoutQrUrl && <img src={checkoutQrUrl} alt="Check-out QR" style={{ width: "100%", maxWidth: 320, borderRadius: 12 }} />}
+                    <div style={{ fontSize: 12, opacity: 0.8, marginTop: 6 }}>
+                      Expires: {formatCentral(activeSession.checkoutExpiresAt)}
+                    </div>
+                  </div>
+
+                  <div style={{ flex: 1, minWidth: 220, background: "#f8f8f9", border: "1px solid #eee", borderRadius: 16, padding: 12 }}>
+                    <div style={{ fontWeight: 900, marginBottom: 6 }}>Stats</div>
+                    <div>Checked in: <b>{checkedInCount}</b> • Checked out: <b>{checkedOutCount}</b></div>
+                  </div>
+                </div>
+
+                <div style={{ background: "#fff", border: "1px solid #eee", borderRadius: 16, padding: 16, marginBottom: 12 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginBottom: 10 }}>
+                    <div>
+                      <div style={{ fontWeight: 900, fontSize: 16 }}>Roster Import (CSV)</div>
+                      <div style={{ fontSize: 12, opacity: 0.75 }}>Paste CSV with header trec_license,first_name,last_name,notes</div>
+                    </div>
+                    <button onClick={importRoster} style={{ padding: "12px 16px", borderRadius: 12, border: `1px solid ${BRAND_RED}`, background: BRAND_RED, color: "#fff", fontWeight: 900 }}>
+                      Load Roster
+                    </button>
+                  </div>
+
+                  <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", marginBottom: 10 }}>
+                    <div className="small" style={{ fontSize: 12, opacity: 0.85 }}>
+                      Upload roster CSV:
+                    </div>
                     <input
                       type="file"
                       accept=".csv,text/csv"
-                      onChange={(e) => setCsvFile(e.target.files?.[0] ?? null)}
-                    />
-                    <button onClick={importCsvToRoster} style={btnStyle("#1167b1")} disabled={csvBusy}>
-                      {csvBusy ? "Importing..." : "Load Roster"}
-                    </button>
-                    <button
-                      onClick={async () => {
-                        const blob = new Blob([rosterTemplate], { type: "text/csv;charset=utf-8" });
-                        const url = URL.createObjectURL(blob);
-                        const a = document.createElement("a");
-                        a.href = url;
-                        a.download = "ggsore_roster_template.csv";
-                        a.click();
-                        URL.revokeObjectURL(url);
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) handleRosterFile(f);
                       }}
-                      style={btnStyle("#f1f1f1", "#111")}
-                    >
-                      Download Template
-                    </button>
+                    />
                   </div>
+
+                  <textarea
+                    value={rosterCSV}
+                    onChange={(e) => setRosterCSV(e.target.value)}
+                    style={{ width: "100%", minHeight: 140, borderRadius: 14, border: "1px solid #ddd", padding: 12, fontSize: 13 }}
+                  />
                 </div>
 
-                <div style={subtleCard()}>
+
+                <div style={{ background: "#fff", border: "1px solid #eee", borderRadius: 16, padding: 16, marginTop: 12 }}>
                   <div style={{ fontWeight: 900, fontSize: 16, marginBottom: 8 }}>Add Walk-In (paid at the door)</div>
-
-                  <div
-                    style={{
-                      display: "grid",
-                      gap: 10,
-                      gridTemplateColumns: "1fr 1fr 120px 1fr 1fr auto",
-                      alignItems: "end",
-                    }}
-                  >
-                    <div style={{ display: "grid", gap: 6 }}>
-                      <label style={{ fontWeight: 800 }}>TREC License</label>
-                      <input
-                        value={walkInLicense}
-                        onChange={(e) => setWalkInLicense(e.target.value)}
-                        style={{ padding: 12, borderRadius: 12, border: "1px solid #ccc" }}
-                      />
-                    </div>
-
-                    <div style={{ display: "grid", gap: 6 }}>
-                      <label style={{ fontWeight: 800 }}>First</label>
-                      <input
-                        value={walkInFirst}
-                        onChange={(e) => setWalkInFirst(e.target.value)}
-                        style={{ padding: 12, borderRadius: 12, border: "1px solid #ccc" }}
-                      />
-                    </div>
-
-                    <div style={{ display: "grid", gap: 6 }}>
-                      <label style={{ fontWeight: 800 }}>M.I.</label>
-                      <input
-                        value={walkInMI}
-                        onChange={(e) => setWalkInMI(e.target.value)}
-                        maxLength={1}
-                        style={{ padding: 12, borderRadius: 12, border: "1px solid #ccc", textTransform: "uppercase" }}
-                      />
-                    </div>
-
-                    <div style={{ display: "grid", gap: 6 }}>
-                      <label style={{ fontWeight: 800 }}>Last</label>
-                      <input
-                        value={walkInLast}
-                        onChange={(e) => setWalkInLast(e.target.value)}
-                        style={{ padding: 12, borderRadius: 12, border: "1px solid #ccc" }}
-                      />
-                    </div>
-
-                    <div style={{ display: "grid", gap: 6 }}>
-                      <label style={{ fontWeight: 800 }}>Payment</label>
-                      <select
-                        value={walkInPayment}
-                        onChange={(e) => setWalkInPayment(e.target.value as PaymentMethod)}
-                        style={{ padding: 12, borderRadius: 12, border: "1px solid #ccc" }}
-                      >
-                        <option value="pay_link">Pay Link</option>
-                        <option value="cash">Cash</option>
-                      </select>
-                    </div>
-
-                    <button onClick={addWalkIn} style={btnStyle("#1167b1")} disabled={walkInBusy}>
-                      {walkInBusy ? "Adding..." : "Add Walk-In"}
-                    </button>
-                  </div>
-                </div>
-
-                <div style={subtleCard()}>
-                  <div style={{ fontWeight: 900, fontSize: 16, marginBottom: 8 }}>
-                    Roster {selectedSessionId ? `(${roster.length})` : ""}
+                  <div className="small" style={{ opacity: 0.85, marginBottom: 10 }}>
+                    Use this when someone registers at the door. Choose Pay Link or Cash, then add them to today’s roster.
                   </div>
 
-                  {!selectedSessionId ? (
-                    <div style={{ opacity: 0.85 }}>Select a session to view its roster.</div>
-                  ) : rosterLoading ? (
-                    <div style={{ opacity: 0.85 }}>Loading roster…</div>
-                  ) : roster.length === 0 ? (
-                    <div style={{ opacity: 0.85 }}>No roster loaded yet for this session.</div>
-                  ) : (
-                    <div style={{ overflowX: "auto" }}>
-                      <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 980 }}>
-                        <thead>
-                          <tr style={{ textAlign: "left" }}>
-                            {[
-                              "Photo",
-                              "TREC License",
-                              "First",
-                              "M.I.",
-                              "Last",
-                              "Payment",
-                              "Check-in",
-                              "Check-out",
-                              "Status",
-                              "Actions",
-                            ].map((h) => (
-                              <th
-                                key={h}
-                                style={{
-                                  padding: "10px 8px",
-                                  borderBottom: "1px solid #e6e6e6",
-                                  fontSize: 12,
-                                  textTransform: "uppercase",
-                                  letterSpacing: 0.6,
-                                }}
-                              >
-                                {h}
-                              </th>
-                            ))}
-                          </tr>
-                        </thead>
-
-                        <tbody>
-                          {roster.map((r) => {
-                            const lic = r.trec_license;
-                            const photo = rosterHeadshots[lic];
-                            const absent = !!r.absent;
-
-                            return (
-                              <tr key={lic} style={{ borderBottom: "1px solid #f0f0f0" }}>
-                                <td style={{ padding: "10px 8px" }}>
-                                  {photo ? (
-                                    <img
-                                      src={photo}
-                                      alt="headshot"
-                                      style={{ width: 44, height: 58, objectFit: "cover", borderRadius: 10, border: "1px solid #ddd" }}
-                                    />
-                                  ) : (
-                                    <div
-                                      style={{
-                                        width: 44,
-                                        height: 58,
-                                        borderRadius: 10,
-                                        border: "1px dashed #bbb",
-                                        display: "flex",
-                                        alignItems: "center",
-                                        justifyContent: "center",
-                                        fontSize: 10,
-                                        opacity: 0.7,
-                                        fontWeight: 900,
-                                      }}
-                                    >
-                                      —
-                                    </div>
-                                  )}
-                                </td>
-
-                                <td style={{ padding: "10px 8px", fontWeight: 900 }}>{lic}</td>
-                                <td style={{ padding: "10px 8px" }}>{toTitleCase(r.first_name || "")}</td>
-                                <td style={{ padding: "10px 8px" }}>{(r.middle_initial || "").toString().toUpperCase()}</td>
-                                <td style={{ padding: "10px 8px" }}>{toTitleCase(r.last_name || "")}</td>
-                                <td style={{ padding: "10px 8px" }}>{r.payment || ""}</td>
-                                <td style={{ padding: "10px 8px", fontSize: 12 }}>
-                                  {r.checkin_at ? new Date(r.checkin_at).toLocaleTimeString() : ""}
-                                </td>
-                                <td style={{ padding: "10px 8px", fontSize: 12 }}>
-                                  {r.checkout_at ? new Date(r.checkout_at).toLocaleTimeString() : ""}
-                                </td>
-                                <td style={{ padding: "10px 8px" }}>
-                                  {absent ? (
-                                    <span style={badgeStyle("#d0efff", "#111")}>Absent</span>
-                                  ) : r.checkin_at ? (
-                                    <span style={badgeStyle("#e8f5e9", "#1b5e20")}>Present</span>
-                                  ) : (
-                                    <span style={badgeStyle("#f1f1f1", "#111")}>—</span>
-                                  )}
-                                </td>
-
-                                <td style={{ padding: "10px 8px" }}>
-                                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                                    <button
-                                      onClick={() => markAbsent(r, !absent)}
-                                      style={btnStyle("#d0efff", "#111")}
-                                    >
-                                      {absent ? "Undo Absent" : "Mark Absent"}
-                                    </button>
-
-                                    <button
-                                      onClick={() => removeStudent(r)}
-                                      style={btnStyle("#187bcd", "#fff")}
-                                    >
-                                      Remove
-                                    </button>
-
-                                    <button onClick={() => clearPhoto(r)} style={btnStyle("#03254c", "#fff")}>
-                                      Clear Photo
-                                    </button>
-
-                                    {!r.checkin_at ? (
-                                      <button onClick={() => manualCheckIn(r)} style={btnStyle("#1167b1", "#fff")}>
-                                        Manual Check-in
-                                      </button>
-                                    ) : (
-                                      <button onClick={() => undoCheckIn(r)} style={btnStyle("#1167b1", "#fff")}>
-                                        Undo Check-in
-                                      </button>
-                                    )}
-
-                                    {!r.checkout_at ? (
-                                      <button onClick={() => manualCheckOut(r)} style={btnStyle("#1167b1", "#fff")}>
-                                        Manual Check-out
-                                      </button>
-                                    ) : (
-                                      <button onClick={() => undoCheckOut(r)} style={btnStyle("#1167b1", "#fff")}>
-                                        Undo Check-out
-                                      </button>
-                                    )}
-                                  </div>
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </div>
-
-                <div style={subtleCard()}>
-                  <div style={{ fontWeight: 900, marginBottom: 10 }}>QR Codes</div>
                   <div style={{ display: "grid", gap: 10 }}>
-                    {!selectedSessionId ? (
-                      <div style={{ opacity: 0.85 }}>Select a session to generate QR codes.</div>
-                    ) : (
-                      <QrBlock checkinQrUrl={checkinQrUrl} checkoutQrUrl={checkoutQrUrl} />
-                    )}
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                      <div>
+                        <label>First name</label>
+                        <input value={walkinFirst} onChange={(e) => setWalkinFirst(e.target.value)} style={{ width: "100%", height: 46, borderRadius: 12, border: "1px solid #ddd", padding: "0 12px" }} />
+                      </div>
+                      <div>
+                        <label>Last name</label>
+                        <input value={walkinLast} onChange={(e) => setWalkinLast(e.target.value)} style={{ width: "100%", height: 46, borderRadius: 12, border: "1px solid #ddd", padding: "0 12px" }} />
+                      </div>
+                    </div>
+
+                    <div style={{ display: "grid", gridTemplateColumns: "1.3fr 0.7fr", gap: 10 }}>
+                      <div>
+                        <label>TREC license (include suffix)</label>
+                        <input
+                          value={walkinLicense}
+                          onChange={(e) => setWalkinLicense(e.target.value)}
+                          placeholder="123456-SA"
+                          style={{ width: "100%", height: 46, borderRadius: 12, border: "1px solid #ddd", padding: "0 12px" }}
+                        />
+                      </div>
+                      <div>
+                        <label>Payment</label>
+                        <select
+                          value={walkinPayMethod}
+                          onChange={(e) => setWalkinPayMethod(e.target.value as any)}
+                          style={{ width: "100%", height: 46, borderRadius: 12, border: "1px solid #ddd", padding: "0 12px" }}
+                        >
+                          <option value="pay_link">Pay Link</option>
+                          <option value="cash">Cash</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label>Notes (optional)</label>
+                      <input value={walkinNotes} onChange={(e) => setWalkinNotes(e.target.value)} style={{ width: "100%", height: 46, borderRadius: 12, border: "1px solid #ddd", padding: "0 12px" }} />
+                    </div>
+
+                    <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                      <button
+                        onClick={addWalkInToRoster}
+                        style={{ padding: "12px 16px", borderRadius: 12, border: "1px solid #8B0000", background: "#8B0000", color: "#fff", fontWeight: 900 }}
+                      >
+                        Add Walk-In
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+
+                <div style={{ background: "#fff", border: "1px solid #eee", borderRadius: 16, padding: 16 }}>
+                  <div style={{ fontWeight: 900, fontSize: 16, marginBottom: 8 }}>Attendance</div>
+                  <div style={{ overflowX: "auto" }}>
+                    
+<table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+  <thead>
+    <tr style={{ textAlign: "left" }}>
+      <th style={{ borderBottom: "1px solid #eee", padding: "8px 6px" }}>Name</th>
+      <th style={{ borderBottom: "1px solid #eee", padding: "8px 6px" }}>TREC</th>
+      <th style={{ borderBottom: "1px solid #eee", padding: "8px 6px" }}>Photo</th>
+      <th style={{ borderBottom: "1px solid #eee", padding: "8px 6px" }}>Payment</th>
+      <th style={{ borderBottom: "1px solid #eee", padding: "8px 6px" }}>Check-in</th>
+      <th style={{ borderBottom: "1px solid #eee", padding: "8px 6px" }}>Check-out</th>
+      <th style={{ borderBottom: "1px solid #eee", padding: "8px 6px" }}>Status</th>
+      <th style={{ borderBottom: "1px solid #eee", padding: "8px 6px" }} />
+    </tr>
+  </thead>
+  <tbody>
+    {roster
+      .filter((r) => !removedSet[normalizeLicense(r.trec_license)])
+      .map((r) => {
+        const lic = normalizeLicense(r.trec_license);
+        const a = getAtt(r.trec_license);
+        const checkedIn = !!a?.checkin_at;
+        const checkedOut = !!a?.checkout_at;
+        const photo = rosterHeadshots[lic] || "";
+        const statusText = checkedOut
+          ? "Completed"
+          : checkedIn
+          ? "Checked in"
+          : absentSet[lic]
+          ? "Absent (marked)"
+          : "Not checked in";
+
+        return (
+          <tr key={r.trec_license}>
+            <td style={{ borderBottom: "1px solid #f2f2f2", padding: "8px 6px", fontWeight: 700 }}>
+              {capWords(r.first_name)} {capWords(r.last_name)}
+            </td>
+            <td style={{ borderBottom: "1px solid #f2f2f2", padding: "8px 6px", fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" }}>
+              {lic}
+            </td>
+            <td style={{ borderBottom: "1px solid #f2f2f2", padding: "8px 6px" }}>
+              {photo ? (
+                <img
+                  src={photo}
+                  alt="Headshot"
+                  style={{
+                    width: 44,
+                    height: 58,
+                    objectFit: "cover",
+                    objectPosition: "center top",
+                    borderRadius: 8,
+                    border: "1px solid #eee",
+                  }}
+                />
+              ) : (
+                <div className="small" style={{ opacity: 0.6 }}>—</div>
+              )}
+            </td>
+            <td style={{ borderBottom: "1px solid #f2f2f2", padding: "8px 6px" }}>
+              {r.payment || ""}
+            </td>
+            <td style={{ borderBottom: "1px solid #f2f2f2", padding: "8px 6px" }}>
+              {a?.checkin_at ? formatCentral(a.checkin_at) : "—"}
+            </td>
+            <td style={{ borderBottom: "1px solid #f2f2f2", padding: "8px 6px" }}>
+              {a?.checkout_at ? formatCentral(a.checkout_at) : "—"}
+            </td>
+            <td style={{ borderBottom: "1px solid #f2f2f2", padding: "8px 6px", fontWeight: 800 }}>
+              {statusText}
+            </td>
+            <td style={{ borderBottom: "1px solid #f2f2f2", padding: "8px 6px" }}>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <button
+                  onClick={() => setAbsentSet((p) => ({ ...p, [lic]: !p[lic] }))}
+                  style={{
+                    padding: "6px 10px",
+                    borderRadius: 10,
+                    border: "1px solid #ddd",
+                    background: absentSet[lic] ? "#8B0000" : "#fff",
+                    color: absentSet[lic] ? "#fff" : "#111",
+                    fontWeight: 800,
+                    fontSize: 12,
+                  }}
+                >
+                  {absentSet[lic] ? "Undo absent" : "Mark absent"}
+                </button>
+
+                <button
+                  onClick={() => setRemovedSet((p) => ({ ...p, [lic]: true }))}
+                  style={{
+                    padding: "6px 10px",
+                    borderRadius: 10,
+                    border: "1px solid #ddd",
+                    background: "#fff",
+                    color: "#111",
+                    fontWeight: 800,
+                    fontSize: 12,
+                  }}
+                >
+                  Remove
+                </button>
+
+                <button
+                  onClick={async () => {
+                    if (!supabase) return;
+                    try {
+                      await supabase.from("gg_profiles").upsert(
+                        { trec_license: lic, headshot_path: null, updated_at: isoNow() },
+                        { onConflict: "trec_license" }
+                      );
+                      setRosterHeadshots((m) => {
+                        const n = { ...m };
+                        delete n[lic];
+                        return n;
+                      });
+                      setStatus(`Headshot cleared for ${lic}.`);
+                    } catch {
+                      setStatus("Could not clear headshot (check gg_profiles table/policies).");
+                    }
+                  }}
+                  style={{
+                    padding: "6px 10px",
+                    borderRadius: 10,
+                    border: "1px solid #ddd",
+                    background: "#fff",
+                    color: "#111",
+                    fontWeight: 800,
+                    fontSize: 12,
+                  }}
+                >
+                  Clear photo
+                </button>
+              </div>
+            </td>
+          </tr>
+        );
+      })}
+  </tbody>
+</table>
+
                   </div>
                 </div>
               </>
             )}
           </div>
         )}
+
+        <div style={{ fontSize: 11, opacity: 0.65, marginTop: 14 }}>
+          Admin access is restricted to the email stored in VITE_ADMIN_EMAIL (Vercel env var).
+        </div>
       </div>
     </div>
   );
+
 }
 
-function QrBlock({ checkinQrUrl, checkoutQrUrl }: { checkinQrUrl: string; checkoutQrUrl: string }) {
-  const [checkinPng, setCheckinPng] = useState<string>("");
-  const [checkoutPng, setCheckoutPng] = useState<string>("");
-
-  useEffect(() => {
-    (async () => {
-      if (!checkinQrUrl || !checkoutQrUrl) return;
-      const ci = await QRCode.toDataURL(checkinQrUrl, { margin: 1, width: 420 });
-      const co = await QRCode.toDataURL(checkoutQrUrl, { margin: 1, width: 420 });
-      setCheckinPng(ci);
-      setCheckoutPng(co);
-    })();
-  }, [checkinQrUrl, checkoutQrUrl]);
-
-  return (
-    <div style={{ display: "grid", gap: 14, gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))" }}>
-      <div style={{ background: "#fff", border: "1px solid #ddd", borderRadius: 16, padding: 16 }}>
-        <div style={{ fontWeight: 900, marginBottom: 8 }}>Check-in QR</div>
-        {checkinPng ? <img src={checkinPng} alt="check-in QR" style={{ width: "100%", maxWidth: 360 }} /> : "…"}
-      </div>
-
-      <div style={{ background: "#fff", border: "1px solid #ddd", borderRadius: 16, padding: 16 }}>
-        <div style={{ fontWeight: 900, marginBottom: 8 }}>Check-out QR</div>
-        {checkoutPng ? <img src={checkoutPng} alt="check-out QR" style={{ width: "100%", maxWidth: 360 }} /> : "…"}
-      </div>
-    </div>
-  );
-}
 

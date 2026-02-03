@@ -56,10 +56,11 @@ body {
 }
 
 .logo {
-  width: 64px;
-  height: 64px;
+  width: min(420px, 42vw);
+  height: auto;
+  max-height: 64px;
   object-fit: contain;
-  border-radius: 10px;
+  border-radius: 0;
 }
 
 .brandText h1 {
@@ -113,6 +114,8 @@ body {
   border-radius: 10px;
   cursor: pointer;
   font-weight: 600;
+
+  font-family: "Century Gothic", "CenturyGothic", "AppleGothic", Arial, sans-serif;
 }
 
 .tab.active {
@@ -170,6 +173,8 @@ body {
   font-weight: 800;
   cursor: pointer;
   font-family: inherit;
+
+  font-family: "Century Gothic", "CenturyGothic", "AppleGothic", Arial, sans-serif;
 }
 
 .btn:disabled {
@@ -240,5 +245,14 @@ body {
 @media (max-width: 760px) {
   .grid2 { grid-template-columns: 1fr; }
   .grid3 { grid-template-columns: 1fr; }
-  .logo { width: 54px; height: 54px; }
+  .logo {
+  width: min(420px, 42vw);
+  height: auto;
+  max-height: 64px;
+  object-fit: contain;
+  border-radius: 0;
 }
+}
+
+
+.tm { font-size: 0.55em; vertical-align: super; }

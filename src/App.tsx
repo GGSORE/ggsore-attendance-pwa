@@ -43,7 +43,7 @@ export default function App() {
           <div className="form">
             <h3>Create Account Details</h3>
             <div className="notice">
-              <strong>Important:</strong> Enter your name exactly as it appears on the TREC license, including middle initial.
+              <strong>Important:</strong> Enter your name exactly as it appears on your TREC license, including middle initial.
               <br />
               For the TREC license number, be sure to include the appropriate suffix: -SA, -B, or -BB.
             </div>

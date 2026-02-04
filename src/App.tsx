@@ -537,3 +537,82 @@ export default function App() {
   );
 }
 
+  const [rosterRows, setRosterRows] = useState<Array<{first_name:string; mi:string; last_name:string; trec_license:string; email:string;}>>([]);
+  const [rosterError, setRosterError] = useState<string>('');
+  const [manualStudent, setManualStudent] = useState({ first_name:'', mi:'', last_name:'', trec_license:'', email:'' });
+
+  const parseCsv = (text: string) => {
+    // Simple CSV parser (comma-separated, supports quoted values)
+    const rows: string[][] = [];
+    let cur = '';
+    let row: string[] = [];
+    let inQuotes = false;
+    for (let i=0;i<text.length;i++){
+      const ch = text[i];
+      if (ch === '"'){
+        if (inQuotes && text[i+1] === '"'){ cur += '"'; i++; }
+        else { inQuotes = !inQuotes; }
+      } else if (ch === ',' && !inQuotes){
+        row.push(cur.trim()); cur=''; 
+      } else if ((ch === '\n' || ch === '\r') && !inQuotes){
+        if (ch === '\r' && text[i+1] === '\n') i++;
+        row.push(cur.trim()); cur='';
+        if (row.some(c=>c.length>0)) rows.push(row);
+        row=[];
+      } else {
+        cur += ch;
+      }
+    }
+    if (cur.length || row.length){ row.push(cur.trim()); if (row.some(c=>c.length>0)) rows.push(row); }
+    return rows;
+  };
+
+  const handleRosterUpload = async (file: File) => {
+    setRosterError('');
+    try{
+      const text = await file.text();
+      const rows = parseCsv(text);
+      if (rows.length === 0){ setRosterError('Roster file appears to be empty.'); return; }
+      const header = rows[0].map(h=>h.toLowerCase().replace(/\s+/g,'_'));
+      const data = rows.slice(1);
+      const idx = (name: string) => header.indexOf(name);
+      const iFirst = idx('first_name');
+      const iMI = idx('mi');
+      const iLast = idx('last_name');
+      const iTrec = idx('trec_license');
+      const iEmail = idx('email');
+      if (iFirst === -1 || iLast === -1 || iTrec === -1){
+        setRosterError('CSV must include columns: first_name, last_name, trec_license (email and mi are optional).');
+        return;
+      }
+      const clean = data
+        .filter(r=>r.length)
+        .map(r=>({
+          first_name: (r[iFirst]||'').trim(),
+          mi: (iMI>-1 ? (r[iMI]||'').trim() : ''),
+          last_name: (r[iLast]||'').trim(),
+          trec_license: (r[iTrec]||'').trim(),
+          email: (iEmail>-1 ? (r[iEmail]||'').trim() : ''),
+        }))
+        .filter(r=>r.first_name && r.last_name && r.trec_license);
+      setRosterRows(clean);
+      // persist locally so it survives refreshes
+      localStorage.setItem('ccp_roster_preview', JSON.stringify(clean));
+    }catch(e:any){
+      setRosterError(e?.message || 'Could not read roster file.');
+    }
+  };
+
+  const addManualStudentToRoster = () => {
+    setRosterError('');
+    const r = { ...manualStudent };
+    if (!r.first_name || !r.last_name || !r.trec_license){
+      setRosterError('Please enter first name, last name, and TREC license for manual add.');
+      return;
+    }
+    const next = [r, ...rosterRows];
+    setRosterRows(next);
+    localStorage.setItem('ccp_roster_preview', JSON.stringify(next));
+    setManualStudent({ first_name:'', mi:'', last_name:'', trec_license:'', email:'' });
+  };
+

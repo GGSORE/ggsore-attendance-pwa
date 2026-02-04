@@ -33,11 +33,15 @@ type RosterRow = {
 };
 
 const COURSE_OPTIONS = [
-  "Commercial Leasing 101™",
-  "Commercial Letters of Intent 101™ – Leasing & Sales",
-  "Things You Need to Know About Practicing Law in Real Estate™",
   "Commercial Leasing Contracts 101™",
-  "Commercial Sales 101™",
+  "Commercial Letters of Intent 101 for Leasing & Sales™",
+  "Things You Need to Know About Practicing Law in Real Estate™",
+  "Deal Dynamics: Deciphering Commercial Real Estate Contracts™",
+  "Commercial Sales 101: From Client to Contract to Close™",
+  "Commercial Property Management 101 - (Apartments Not Included)™",
+  "Lights, Camera, Impact! REALTORS® Guide to Success on Camera™",
+  "High Stakes: Seed-to-Sale Hemp Law Changes in Texas™ (3 hours)™",
+  "First, It's Not Marijuana: Hemp Laws & Texas Real Estate (2 hours)™"
 ];
 
 function safeLower(s: string | null | undefined) {

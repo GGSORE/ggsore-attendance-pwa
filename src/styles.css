@@ -11,9 +11,11 @@
 
 *{ box-sizing:border-box; }
 
-html, body{ height:100%; }
+html, body{
+ height:100%; }
 
 body{
+
   margin:0;
   font-family: "Century Gothic", "CenturyGothic", AppleGothic, "Segoe UI", Arial, sans-serif;
   color: var(--text);
@@ -121,23 +123,26 @@ button, input, textarea, select{
 
 .btnPrimary{
   background: var(--brand-blue);
+  color: #ffffff;
   border: 1px solid var(--brand-blue);
-  color: #fff;
-  border-radius: 12px;
-  padding: 10px 16px;
-  cursor:pointer;
+  border-radius: 10px;
+  padding: 10px 14px;
   font-weight: 700;
+  cursor: pointer;
 }
+.btnPrimary:disabled{ opacity:0.6; cursor:not-allowed; }
+
 
 .btnOutline{
-  background: #fff;
+  background: transparent;
+  color: var(--text);
   border: 1px solid var(--outline-blue);
-  color: #111;
-  border-radius: 12px;
-  padding: 10px 16px;
-  cursor:pointer;
+  border-radius: 10px;
+  padding: 10px 14px;
   font-weight: 700;
+  cursor: pointer;
 }
+
 
 .sectionTitle{
   margin-top: 8px;
@@ -247,3 +252,27 @@ button, input, textarea, select{
   color: var(--muted);
   font-size: 12px;
 }
+
+input, button, textarea, select{ font-family: inherit; }
+
+.statusError{
+  margin:8px 0 0 0;
+  color:#b00020;
+  font-size:14px;
+}
+.mutedSmall{
+  margin:6px 0 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+.avatarRow{ margin-top:10px; }
+.avatar{
+  width:64px;
+  height:64px;
+  border-radius:12px;
+  object-fit:cover;
+  border:1px solid rgba(0,0,0,0.08);
+}
+.rosterTableWrap{ margin-top:10px; overflow-x:auto; }
+.table{ width:100%; border-collapse:collapse; font-size:14px; }
+.table th, .table td{ text-align:left; padding:10px 8px; border-bottom:1px solid rgba(0,0,0,0.08); }

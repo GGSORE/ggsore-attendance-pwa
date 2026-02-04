@@ -5,35 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>GGSORE Attendance</title>
   </head>
-
   <body>
-    <!-- Splash Screen -->
-    <div id="splash" style="
-      position: fixed;
-      inset: 0;
-      background: white;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      z-index: 9999;
-    ">
-      <img src="/logo.png" alt="Guillory Group School of Real Estate" style="max-width: 280px;" />
-    </div>
-
-    <!-- React App Mount Point -->
     <div id="root"></div>
-
-    <!-- Splash Screen Timer (3 seconds) -->
-    <script>
-      window.addEventListener("load", function () {
-        setTimeout(function () {
-          const splash = document.getElementById("splash");
-          if (splash) splash.style.display = "none";
-        }, 3000);
-      });
-    </script>
-
-    <!-- React Entry -->
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

@@ -2,22 +2,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import "./styles.css";
 
-/**
- * ClassCheck Pro™ — single-file App.tsx
- * Hotfix: define/own admin view state (prevents "adminTab is not defined")
- * Also: no credential prefill, Century Gothic everywhere, student/admin separation.
- */
-
-// ---------- Supabase ----------
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
-const adminEmailEnv = (import.meta.env.VITE_ADMIN_EMAIL as string | undefined) ?? "";
-
-function buildSupabase(): SupabaseClient | null {
-  if (!supabaseUrl || !supabaseAnonKey) return null;
-  return createClient(supabaseUrl, supabaseAnonKey);
-}
-
 type View = "auth" | "app";
 type AuthTab = "login" | "create";
 type AppTab = "student" | "admin";
@@ -29,6 +13,7 @@ type Profile = {
   middle_initial?: string | null;
   last_name?: string | null;
   trec_license?: string | null;
+  photo_url?: string | null;
 };
 
 type SessionRow = {
@@ -39,19 +24,82 @@ type SessionRow = {
   created_at?: string;
 };
 
+type RosterRow = {
+  first_name: string;
+  mi: string;
+  last_name: string;
+  trec_license: string;
+  email: string;
+};
+
+const COURSE_OPTIONS = [
+  "Commercial Leasing 101™",
+  "Commercial Letters of Intent 101™ – Leasing & Sales",
+  "Things You Need to Know About Practicing Law in Real Estate™",
+  "Commercial Leasing Contracts 101™",
+  "Commercial Sales 101™",
+];
+
+function safeLower(s: string | null | undefined) {
+  return (s ?? "").toLowerCase();
+}
+
+function parseCsv(text: string): string[][] {
+  // Simple CSV parser (comma-separated, supports quoted values)
+  const rows: string[][] = [];
+  let cur = "";
+  let row: string[] = [];
+  let inQuotes = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === '"') {
+      if (inQuotes && text[i + 1] === '"') {
+        cur += '"';
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (ch === "," && !inQuotes) {
+      row.push(cur.trim());
+      cur = "";
+    } else if ((ch === "\n" || ch === "\r") && !inQuotes) {
+      if (ch === "\r" && text[i + 1] === "\n") i++;
+      row.push(cur.trim());
+      cur = "";
+      if (row.some((c) => c.length > 0)) rows.push(row);
+      row = [];
+    } else {
+      cur += ch;
+    }
+  }
+
+  if (cur.length || row.length) {
+    row.push(cur.trim());
+    if (row.some((c) => c.length > 0)) rows.push(row);
+  }
+  return rows;
+}
+
 export default function App() {
-  const supabase = useMemo(() => buildSupabase(), []);
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
+  const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+  const adminEmailEnv = (import.meta.env.VITE_ADMIN_EMAIL as string | undefined) || "";
+
+  const supabase: SupabaseClient | null = useMemo(() => {
+    if (!supabaseUrl || !supabaseAnonKey) return null;
+    return createClient(supabaseUrl, supabaseAnonKey);
+  }, [supabaseUrl, supabaseAnonKey]);
+
   const [view, setView] = useState<View>("auth");
   const [authTab, setAuthTab] = useState<AuthTab>("login");
-
-  // HOTFIX: adminTab must exist (we use appTab, but this prevents undefined usage)
   const [appTab, setAppTab] = useState<AppTab>("student");
 
-  // Auth fields (never prefilled)
+  // auth form fields
   const [email, setEmail] = useState<string>("");
   const [password, setPassword] = useState<string>("");
 
-  // Create Account fields
+  // create account fields
   const [firstName, setFirstName] = useState<string>("");
   const [middleInitial, setMiddleInitial] = useState<string>("");
   const [lastName, setLastName] = useState<string>("");
@@ -60,25 +108,46 @@ export default function App() {
   const [userProfile, setUserProfile] = useState<Profile | null>(null);
   const [statusMsg, setStatusMsg] = useState<string>("");
 
-  // Check-in
-  const [manualQr, setManualQr] = useState<string>("");
+  // ---------- Student Scan ----------
   const [scanSupported, setScanSupported] = useState<boolean>(false);
   const [scanning, setScanning] = useState<boolean>(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const scanTimerRef = useRef<number | null>(null);
 
-  // Admin session creator
+  // value captured by QR scan (student does NOT manually paste)
+  const [qrValue, setQrValue] = useState<string>("");
+
+  // ---------- Admin ----------
+  const [selectedCourse, setSelectedCourse] = useState<string>(COURSE_OPTIONS[0] ?? "");
   const [sessionTitle, setSessionTitle] = useState<string>("");
   const [sessionStart, setSessionStart] = useState<string>("");
   const [sessionEnd, setSessionEnd] = useState<string>("");
   const [recentSessions, setRecentSessions] = useState<SessionRow[]>([]);
 
+  // roster tools
+  const [rosterRows, setRosterRows] = useState<RosterRow[]>(() => {
+    try {
+      const raw = localStorage.getItem("ccp_roster_preview");
+      return raw ? (JSON.parse(raw) as RosterRow[]) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [rosterError, setRosterError] = useState<string>("");
+  const [manualStudent, setManualStudent] = useState<RosterRow>({
+    first_name: "",
+    mi: "",
+    last_name: "",
+    trec_license: "",
+    email: "",
+  });
+
   const isAdmin = useMemo(() => {
-    const e = (userProfile?.email ?? "").toLowerCase();
-    const adminE = adminEmailEnv.toLowerCase();
+    const e = safeLower(userProfile?.email);
+    const adminE = safeLower(adminEmailEnv);
     return !!e && !!adminE && e === adminE;
-  }, [userProfile?.email]);
+  }, [userProfile?.email, adminEmailEnv]);
 
   // Detect basic QR capability (BarcodeDetector is the lightest option)
   useEffect(() => {
@@ -105,11 +174,11 @@ export default function App() {
 
   async function loadProfile(userId: string, emailAddr: string) {
     if (!supabase) return;
-    // Best-effort: profiles table commonly used; if not present, fallback to minimal profile
+
     try {
       const { data, error } = await supabase
         .from("profiles")
-        .select("id,email,first_name,middle_initial,last_name,trec_license")
+        .select("id,email,first_name,middle_initial,last_name,trec_license,photo_url")
         .eq("id", userId)
         .maybeSingle();
 
@@ -125,6 +194,7 @@ export default function App() {
         middle_initial: data.middle_initial,
         last_name: data.last_name,
         trec_license: data.trec_license,
+        photo_url: data.photo_url ?? null,
       });
     } catch {
       setUserProfile({ id: userId, email: emailAddr });
@@ -134,9 +204,11 @@ export default function App() {
   async function onLogin() {
     setStatusMsg("");
     if (!supabase) return;
+
     try {
       const { data, error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) throw error;
+
       await loadProfile(data.user.id, data.user.email ?? "");
       setView("app");
       setAppTab("student");
@@ -149,8 +221,9 @@ export default function App() {
   async function onCreateAccount() {
     setStatusMsg("");
     if (!supabase) return;
+
     try {
-      // Validate only on submit (no student-facing missing-field banner)
+      // Validate only on submit
       const missing: string[] = [];
       if (!email) missing.push("email");
       if (!password) missing.push("password");
@@ -202,7 +275,7 @@ export default function App() {
       setMiddleInitial("");
       setLastName("");
       setTrecLicense("");
-      setManualQr("");
+      setQrValue("");
       stopScan();
       setView("auth");
       setAuthTab("login");
@@ -218,7 +291,7 @@ export default function App() {
   async function startScan() {
     setStatusMsg("");
     if (!scanSupported) {
-      setStatusMsg("QR scanning isn’t supported in this browser. Use Manual Entry below.");
+      setStatusMsg("QR scanning isn’t supported in this browser. Please use the mobile camera option (Safari/Chrome) or contact the instructor.");
       return;
     }
     setScanning(true);
@@ -245,9 +318,9 @@ export default function App() {
           if (codes && codes.length) {
             const raw = codes[0]?.rawValue ?? "";
             if (raw) {
-              setManualQr(raw);
+              setQrValue(raw);
               stopScan();
-              setStatusMsg("QR captured. Review and submit below.");
+              setStatusMsg("QR captured. Tap “Submit Check-In”.");
               return;
             }
           }
@@ -282,25 +355,24 @@ export default function App() {
   async function submitCheckIn() {
     setStatusMsg("");
     if (!supabase) return;
-    if (!manualQr.trim()) {
-      setStatusMsg("Paste the QR value (or scan) before submitting.");
+    if (!qrValue.trim()) {
+      setStatusMsg("Please scan the QR code first.");
       return;
     }
     try {
-      // Table name may vary; use "checkins" as default.
       const { error } = await supabase.from("checkins").insert({
         user_id: userProfile?.id,
-        qr_value: manualQr.trim(),
+        qr_value: qrValue.trim(),
       });
       if (error) throw error;
       setStatusMsg("✅ Check-in submitted!");
-      setManualQr("");
+      setQrValue("");
     } catch (e: any) {
       setStatusMsg(e?.message ?? "Check-in failed (table/permissions may need setup).");
     }
   }
 
-  // ---------- Admin ----------
+  // ---------- Admin: sessions ----------
   async function loadRecentSessions() {
     if (!supabase) return;
     try {
@@ -336,6 +408,7 @@ export default function App() {
         start_time: new Date(sessionStart).toISOString(),
         end_time: new Date(sessionEnd).toISOString(),
         created_by: userProfile?.id,
+        course_name: selectedCourse,
       });
       if (error) throw error;
       setStatusMsg("✅ Class session created.");
@@ -346,6 +419,71 @@ export default function App() {
     } catch (e: any) {
       setStatusMsg(e?.message ?? "Session creation failed (table/permissions may need setup).");
     }
+  }
+
+  // ---------- Admin: roster ----------
+  function persistRoster(next: RosterRow[]) {
+    setRosterRows(next);
+    try {
+      localStorage.setItem("ccp_roster_preview", JSON.stringify(next));
+    } catch {
+      // ignore
+    }
+  }
+
+  async function handleRosterUpload(file: File) {
+    setRosterError("");
+    try {
+      const text = await file.text();
+      const rows = parseCsv(text);
+      if (!rows.length) {
+        setRosterError("Roster file appears to be empty.");
+        return;
+      }
+      const header = rows[0].map((h) => h.toLowerCase().replace(/\s+/g, "_"));
+      const data = rows.slice(1);
+
+      const idx = (name: string) => header.indexOf(name);
+      const iFirst = idx("first_name");
+      const iMI = idx("mi");
+      const iLast = idx("last_name");
+      const iTrec = idx("trec_license");
+      const iEmail = idx("email");
+
+      if (iFirst === -1 || iLast === -1 || iTrec === -1) {
+        setRosterError("CSV must include columns: first_name, last_name, trec_license (email and mi are optional).");
+        return;
+      }
+
+      const clean: RosterRow[] = data
+        .filter((r) => r.length)
+        .map((r) => ({
+          first_name: (r[iFirst] || "").trim(),
+          mi: iMI > -1 ? (r[iMI] || "").trim() : "",
+          last_name: (r[iLast] || "").trim(),
+          trec_license: (r[iTrec] || "").trim(),
+          email: iEmail > -1 ? (r[iEmail] || "").trim() : "",
+        }))
+        .filter((r) => r.first_name && r.last_name && r.trec_license);
+
+      persistRoster(clean);
+      setStatusMsg(`Roster loaded: ${clean.length} student${clean.length === 1 ? "" : "s"}.`);
+    } catch (e: any) {
+      setRosterError(e?.message || "Could not read roster file.");
+    }
+  }
+
+  function addManualStudentToRoster() {
+    setRosterError("");
+    const r = { ...manualStudent };
+    if (!r.first_name || !r.last_name || !r.trec_license) {
+      setRosterError("Please enter first name, last name, and TREC license for manual add.");
+      return;
+    }
+    const next = [r, ...rosterRows];
+    persistRoster(next);
+    setManualStudent({ first_name: "", mi: "", last_name: "", trec_license: "", email: "" });
+    setStatusMsg("Student added to roster preview.");
   }
 
   // ---------- Render ----------
@@ -361,10 +499,18 @@ export default function App() {
             <div className="subhead">Login or create an account.</div>
 
             <div className="tabRow">
-              <button type="button" className={"tabBtn" + (authTab === "login" ? " tabBtnActive" : "")} onClick={() => setAuthTab("login")}>
+              <button
+                type="button"
+                className={"tabBtn" + (authTab === "login" ? " tabBtnActive" : "")}
+                onClick={() => setAuthTab("login")}
+              >
                 Login
               </button>
-              <button type="button" className={"tabBtn" + (authTab === "create" ? " tabBtnActive" : "")} onClick={() => setAuthTab("create")}>
+              <button
+                type="button"
+                className={"tabBtn" + (authTab === "create" ? " tabBtnActive" : "")}
+                onClick={() => setAuthTab("create")}
+              >
                 Create Account
               </button>
             </div>
@@ -372,11 +518,25 @@ export default function App() {
             <div className="grid2">
               <div>
                 <label className="label">Email</label>
-                <input className="input" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="off" inputMode="email" placeholder="name@example.com" />
+                <input
+                  className="input"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  autoComplete="off"
+                  inputMode="email"
+                  placeholder="name@example.com"
+                />
               </div>
               <div>
                 <label className="label">Password</label>
-                <input className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" placeholder="••••••••" />
+                <input
+                  className="input"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  autoComplete="new-password"
+                  placeholder="••••••••"
+                />
               </div>
             </div>
 
@@ -403,7 +563,13 @@ export default function App() {
                   </div>
                   <div>
                     <label className="label">M.I. (optional)</label>
-                    <input className="input" value={middleInitial} onChange={(e) => setMiddleInitial(e.target.value)} maxLength={1} autoComplete="off" />
+                    <input
+                      className="input"
+                      value={middleInitial}
+                      onChange={(e) => setMiddleInitial(e.target.value)}
+                      maxLength={1}
+                      autoComplete="off"
+                    />
                   </div>
                   <div>
                     <label className="label">Last Name</label>
@@ -414,7 +580,13 @@ export default function App() {
                 <div className="grid1">
                   <div>
                     <label className="label">TREC License</label>
-                    <input className="input" value={trecLicense} onChange={(e) => setTrecLicense(e.target.value)} autoComplete="off" placeholder="123456-SA" />
+                    <input
+                      className="input"
+                      value={trecLicense}
+                      onChange={(e) => setTrecLicense(e.target.value)}
+                      autoComplete="off"
+                      placeholder="123456-SA"
+                    />
                   </div>
                 </div>
 
@@ -435,17 +607,27 @@ export default function App() {
                 <div className="welcome">{welcomeName()}</div>
                 <div className="muted">{userProfile?.email}</div>
               </div>
+
               <div className="topActions">
                 {isAdmin ? (
                   <>
-                    <button type="button" className={"tabBtn small" + (appTab === "student" ? " tabBtnActive" : "")} onClick={() => setAppTab("student")}>
+                    <button
+                      type="button"
+                      className={"tabBtn small" + (appTab === "student" ? " tabBtnActive" : "")}
+                      onClick={() => setAppTab("student")}
+                    >
                       Student
                     </button>
-                    <button type="button" className={"tabBtn small" + (appTab === "admin" ? " tabBtnActive" : "")} onClick={() => setAppTab("admin")}>
+                    <button
+                      type="button"
+                      className={"tabBtn small" + (appTab === "admin" ? " tabBtnActive" : "")}
+                      onClick={() => setAppTab("admin")}
+                    >
                       Admin / Instructor
                     </button>
                   </>
                 ) : null}
+
                 <button type="button" className="btnOutline" onClick={onSignOut}>
                   Sign out
                 </button>
@@ -464,13 +646,15 @@ export default function App() {
                 </div>
 
                 <div className="scanBox">
-                  {scanSupported ? <video ref={videoRef} className="video" muted playsInline /> : <div className="scanUnsupported">QR scanning isn’t supported in this browser. Use Manual Entry below.</div>}
+                  {scanSupported ? (
+                    <video ref={videoRef} className="video" muted playsInline />
+                  ) : (
+                    <div className="scanUnsupported">QR scanning isn’t supported in this browser.</div>
+                  )}
                 </div>
 
-                <div className="sectionSubtitle">Manual Entry</div>
-                <input className="input" value={manualQr} onChange={(e) => setManualQr(e.target.value)} placeholder="Paste the QR value here (if needed)" autoComplete="off" />
                 <div className="actions">
-                  <button type="button" className="btnPrimary" onClick={submitCheckIn}>
+                  <button type="button" className="btnPrimary" onClick={submitCheckIn} disabled={!qrValue.trim()}>
                     Submit Check-In
                   </button>
                 </div>
@@ -481,10 +665,20 @@ export default function App() {
               <>
                 <div className="sectionTitle">Admin / Instructor</div>
 
-                <div className="grid1">
+                <div className="grid2">
+                  <div>
+                    <label className="label">Course</label>
+                    <select className="input" value={selectedCourse} onChange={(e) => setSelectedCourse(e.target.value)}>
+                      {COURSE_OPTIONS.map((c) => (
+                        <option key={c} value={c}>
+                          {c}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                   <div>
                     <label className="label">Session Title</label>
-                    <input className="input" value={sessionTitle} onChange={(e) => setSessionTitle(e.target.value)} />
+                    <input className="input" value={sessionTitle} onChange={(e) => setSessionTitle(e.target.value)} placeholder="e.g., Morning Session" />
                   </div>
                 </div>
 
@@ -505,7 +699,101 @@ export default function App() {
                   </button>
                 </div>
 
-                <div className="sectionSubtitle">Recent Sessions</div>
+                <div className="sectionSubtitle">Roster</div>
+
+                <div className="grid2">
+                  <div>
+                    <label className="label">Upload roster CSV</label>
+                    <input
+                      className="input"
+                      type="file"
+                      accept=".csv,text/csv"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) handleRosterUpload(f);
+                      }}
+                    />
+                    {rosterError ? <div className="status">{rosterError}</div> : null}
+                  </div>
+
+                  <div>
+                    <label className="label">Manual add</label>
+                    <div className="grid3">
+                      <input
+                        className="input"
+                        value={manualStudent.first_name}
+                        onChange={(e) => setManualStudent({ ...manualStudent, first_name: e.target.value })}
+                        placeholder="First"
+                        autoComplete="off"
+                      />
+                      <input
+                        className="input"
+                        value={manualStudent.mi}
+                        onChange={(e) => setManualStudent({ ...manualStudent, mi: e.target.value })}
+                        placeholder="MI"
+                        maxLength={1}
+                        autoComplete="off"
+                      />
+                      <input
+                        className="input"
+                        value={manualStudent.last_name}
+                        onChange={(e) => setManualStudent({ ...manualStudent, last_name: e.target.value })}
+                        placeholder="Last"
+                        autoComplete="off"
+                      />
+                    </div>
+
+                    <div className="grid2" style={{ marginTop: 10 }}>
+                      <input
+                        className="input"
+                        value={manualStudent.trec_license}
+                        onChange={(e) => setManualStudent({ ...manualStudent, trec_license: e.target.value })}
+                        placeholder="TREC License (123456-SA)"
+                        autoComplete="off"
+                      />
+                      <input
+                        className="input"
+                        value={manualStudent.email}
+                        onChange={(e) => setManualStudent({ ...manualStudent, email: e.target.value })}
+                        placeholder="Email (optional)"
+                        autoComplete="off"
+                      />
+                    </div>
+
+                    <div className="actions" style={{ justifyContent: "flex-start" }}>
+                      <button type="button" className="btnOutline" onClick={addManualStudentToRoster}>
+                        Add Student
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="sectionSubtitle">Roster Preview</div>
+                <div className="muted">{rosterRows.length ? `${rosterRows.length} student(s) loaded.` : "No roster loaded yet."}</div>
+
+                {rosterRows.length ? (
+                  <div className="table" style={{ marginTop: 10 }}>
+                    <div className="tHead">
+                      <div>Name</div>
+                      <div>TREC</div>
+                      <div>Email</div>
+                    </div>
+                    {rosterRows.slice(0, 10).map((r, idx) => (
+                      <div className="tRow" key={idx}>
+                        <div>
+                          {r.first_name} {r.mi ? `${r.mi}. ` : ""}{r.last_name}
+                        </div>
+                        <div>{r.trec_license}</div>
+                        <div>{r.email || "—"}</div>
+                      </div>
+                    ))}
+                    {rosterRows.length > 10 ? <div className="tEmpty">Showing first 10 only.</div> : null}
+                  </div>
+                ) : null}
+
+                <div className="sectionSubtitle" style={{ marginTop: 18 }}>
+                  Recent Sessions
+                </div>
                 <div className="table">
                   <div className="tHead">
                     <div>Title</div>
@@ -536,83 +824,4 @@ export default function App() {
     </div>
   );
 }
-
-  const [rosterRows, setRosterRows] = useState<Array<{first_name:string; mi:string; last_name:string; trec_license:string; email:string;}>>([]);
-  const [rosterError, setRosterError] = useState<string>('');
-  const [manualStudent, setManualStudent] = useState({ first_name:'', mi:'', last_name:'', trec_license:'', email:'' });
-
-  const parseCsv = (text: string) => {
-    // Simple CSV parser (comma-separated, supports quoted values)
-    const rows: string[][] = [];
-    let cur = '';
-    let row: string[] = [];
-    let inQuotes = false;
-    for (let i=0;i<text.length;i++){
-      const ch = text[i];
-      if (ch === '"'){
-        if (inQuotes && text[i+1] === '"'){ cur += '"'; i++; }
-        else { inQuotes = !inQuotes; }
-      } else if (ch === ',' && !inQuotes){
-        row.push(cur.trim()); cur=''; 
-      } else if ((ch === '\n' || ch === '\r') && !inQuotes){
-        if (ch === '\r' && text[i+1] === '\n') i++;
-        row.push(cur.trim()); cur='';
-        if (row.some(c=>c.length>0)) rows.push(row);
-        row=[];
-      } else {
-        cur += ch;
-      }
-    }
-    if (cur.length || row.length){ row.push(cur.trim()); if (row.some(c=>c.length>0)) rows.push(row); }
-    return rows;
-  };
-
-  const handleRosterUpload = async (file: File) => {
-    setRosterError('');
-    try{
-      const text = await file.text();
-      const rows = parseCsv(text);
-      if (rows.length === 0){ setRosterError('Roster file appears to be empty.'); return; }
-      const header = rows[0].map(h=>h.toLowerCase().replace(/\s+/g,'_'));
-      const data = rows.slice(1);
-      const idx = (name: string) => header.indexOf(name);
-      const iFirst = idx('first_name');
-      const iMI = idx('mi');
-      const iLast = idx('last_name');
-      const iTrec = idx('trec_license');
-      const iEmail = idx('email');
-      if (iFirst === -1 || iLast === -1 || iTrec === -1){
-        setRosterError('CSV must include columns: first_name, last_name, trec_license (email and mi are optional).');
-        return;
-      }
-      const clean = data
-        .filter(r=>r.length)
-        .map(r=>({
-          first_name: (r[iFirst]||'').trim(),
-          mi: (iMI>-1 ? (r[iMI]||'').trim() : ''),
-          last_name: (r[iLast]||'').trim(),
-          trec_license: (r[iTrec]||'').trim(),
-          email: (iEmail>-1 ? (r[iEmail]||'').trim() : ''),
-        }))
-        .filter(r=>r.first_name && r.last_name && r.trec_license);
-      setRosterRows(clean);
-      // persist locally so it survives refreshes
-      localStorage.setItem('ccp_roster_preview', JSON.stringify(clean));
-    }catch(e:any){
-      setRosterError(e?.message || 'Could not read roster file.');
-    }
-  };
-
-  const addManualStudentToRoster = () => {
-    setRosterError('');
-    const r = { ...manualStudent };
-    if (!r.first_name || !r.last_name || !r.trec_license){
-      setRosterError('Please enter first name, last name, and TREC license for manual add.');
-      return;
-    }
-    const next = [r, ...rosterRows];
-    setRosterRows(next);
-    localStorage.setItem('ccp_roster_preview', JSON.stringify(next));
-    setManualStudent({ first_name:'', mi:'', last_name:'', trec_license:'', email:'' });
-  };
 

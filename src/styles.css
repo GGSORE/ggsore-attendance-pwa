@@ -242,9 +242,16 @@ body {
 
 .tHead, .tRow {
   display: grid;
-  grid-template-columns: 2fr 1fr 2fr;
+  grid-template-columns: 40px 2fr 1fr 2fr;
+  align-items: center;
   padding: 8px 12px;
 }
+
+/* Hide the blank headshot header cell so the text headings still line up */
+.tHead > div:first-child {
+  opacity: 0;
+}
+
 
 .tHead {
   background: #f4f4f4;

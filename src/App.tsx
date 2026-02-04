@@ -181,7 +181,7 @@ export default function App() {
 
     try {
       const { data, error } = await supabase
-        .from("profiles")
+        .from("gg_profiles")
         .select("id,email,first_name,middle_initial,last_name,trec_license,photo_url")
         .eq("id", userId)
         .maybeSingle();
@@ -244,7 +244,7 @@ export default function App() {
 
       // Best-effort profile insert (non-fatal)
       try {
-        await supabase.from("profiles").upsert({
+        await supabase.from("gg_profiles").upsert({
           id: data.user?.id,
           email,
           first_name: firstName,

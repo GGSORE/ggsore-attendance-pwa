@@ -381,7 +381,7 @@ export default function App() {
     if (!supabase) return;
     try {
       const { data, error } = await supabase
-        .from("class_sessions")
+        .from("gg_sessions")
         .select("id,title,start_time,end_time,created_at")
         .order("created_at", { ascending: false })
         .limit(10);

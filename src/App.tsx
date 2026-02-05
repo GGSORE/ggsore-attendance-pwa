@@ -123,11 +123,12 @@ export default function App() {
   const [email, setEmail] = useState<string>("");
   const [password, setPassword] = useState<string>("");
 
-  // create account fields
+    // create account fields
   const [firstName, setFirstName] = useState<string>("");
   const [middleInitial, setMiddleInitial] = useState<string>("");
   const [lastName, setLastName] = useState<string>("");
   const [trecLicense, setTrecLicense] = useState<string>("");
+  const [headshotFile, setHeadshotFile] = useState<File | null>(null);
 
   const [userProfile, setUserProfile] = useState<Profile | null>(null);
   const [statusMsg, setStatusMsg] = useState<string>("");
@@ -602,6 +603,7 @@ export default function App() {
               </div>
             ) : (
               <>
+                              <>
                 <div className="sectionTitle">Create Account Details</div>
 
                 <div className="noteBox">
@@ -614,7 +616,12 @@ export default function App() {
                 <div className="grid3">
                   <div>
                     <label className="label">First Name</label>
-                    <input className="input" value={firstName} onChange={(e) => setFirstName(e.target.value)} autoComplete="off" />
+                    <input
+                      className="input"
+                      value={firstName}
+                      onChange={(e) => setFirstName(e.target.value)}
+                      autoComplete="off"
+                    />
                   </div>
                   <div>
                     <label className="label">M.I. (optional)</label>
@@ -628,7 +635,12 @@ export default function App() {
                   </div>
                   <div>
                     <label className="label">Last Name</label>
-                    <input className="input" value={lastName} onChange={(e) => setLastName(e.target.value)} autoComplete="off" />
+                    <input
+                      className="input"
+                      value={lastName}
+                      onChange={(e) => setLastName(e.target.value)}
+                      autoComplete="off"
+                    />
                   </div>
                 </div>
 
@@ -645,12 +657,31 @@ export default function App() {
                   </div>
                 </div>
 
+                <div className="grid1">
+                  <div>
+                    <label className="label">Headshot (optional)</label>
+                    <input
+                      className="input"
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0] ?? null;
+                        setHeadshotFile(f);
+                      }}
+                    />
+                    <div className="muted" style={{ marginTop: 6 }}>
+                      Upload a clear headshot photo (JPG/PNG). This helps match attendance records.
+                    </div>
+                  </div>
+                </div>
+
                 <div className="actions">
                   <button type="button" className="btnPrimary" onClick={onCreateAccount}>
                     Create Account
                   </button>
                 </div>
               </>
+
             )}
 
             {statusMsg ? <div className="status">{statusMsg}</div> : null}

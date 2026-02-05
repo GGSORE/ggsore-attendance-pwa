@@ -549,7 +549,7 @@ export default function App() {
           <img className="brandLogo" src="/classcheckpro-logo.png" alt="ClassCheck Pro™" draggable={false} />
         </header>
 
-        {view === "auth" ? (
+                {view === "auth" ? (
           <>
             <div className="subhead">Login or create an account.</div>
 
@@ -603,7 +603,6 @@ export default function App() {
               </div>
             ) : (
               <>
-                              <>
                 <div className="sectionTitle">Create Account Details</div>
 
                 <div className="noteBox">
@@ -681,7 +680,6 @@ export default function App() {
                   </button>
                 </div>
               </>
-
             )}
 
             {statusMsg ? <div className="status">{statusMsg}</div> : null}
@@ -776,11 +774,21 @@ export default function App() {
                 <div className="grid2">
                   <div>
                     <label className="label">Start Time</label>
-                    <input className="input" type="datetime-local" value={sessionStart} onChange={(e) => setSessionStart(e.target.value)} />
+                    <input
+                      className="input"
+                      type="datetime-local"
+                      value={sessionStart}
+                      onChange={(e) => setSessionStart(e.target.value)}
+                    />
                   </div>
                   <div>
                     <label className="label">End Time</label>
-                    <input className="input" type="datetime-local" value={sessionEnd} onChange={(e) => setSessionEnd(e.target.value)} />
+                    <input
+                      className="input"
+                      type="datetime-local"
+                      value={sessionEnd}
+                      onChange={(e) => setSessionEnd(e.target.value)}
+                    />
                   </div>
                 </div>
 
@@ -910,6 +918,7 @@ export default function App() {
             )}
           </>
         )}
+
 
         <footer className="footer">© {new Date().getFullYear()} ClassCheck Pro™</footer>
       </div>

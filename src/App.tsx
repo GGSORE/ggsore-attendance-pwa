@@ -484,7 +484,7 @@ export default function App() {
       return;
     }
     try {
-      const { error } = await supabase.from("class_sessions").insert({
+      const { error } = await supabase.from("gg_sessions").insert({
         title: sessionTitle.trim(),
         start_time: new Date(sessionStart).toISOString(),
         end_time: new Date(sessionEnd).toISOString(),

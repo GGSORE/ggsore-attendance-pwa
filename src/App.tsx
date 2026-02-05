@@ -19,9 +19,8 @@ type Profile = {
 type SessionRow = {
   id: string;
   title: string;
-  starts_at: string;
-  ends_at: string;
-  course_name?: string | null;
+  start_time: string;
+  end_time: string;
   created_at?: string;
 };
 
@@ -86,26 +85,6 @@ function parseCsv(text: string): string[][] {
   return rows;
 }
 
-function formatSessionLabel(s: SessionRow) {
-  const course = (s.course_name ?? "").trim();
-  const title = (s.title ?? "").trim();
-  const starts = s.starts_at ? new Date(s.starts_at).toLocaleString() : "";
-  const prefix = course ? `${course} — ` : "";
-  return `${prefix}${title || "Session"} (${starts})`;
-}
-
-function buildQrValue(sessionId: string, direction: "IN" | "OUT") {
-  // Keep this stable + human-readable. BarcodeDetector will read the raw string.
-  // Example: CCP|<uuid>|IN
-  return `CCP|${sessionId}|${direction}`;
-}
-
-function qrImgUrl(value: string) {
-  // No new npm deps. Uses a simple public QR render endpoint.
-  // If you prefer an all-local generator later, we can add qrcode and swap this out.
-  return `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(value)}`;
-}
-
 export default function App() {
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
   const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
@@ -130,6 +109,9 @@ export default function App() {
   const [lastName, setLastName] = useState<string>("");
   const [trecLicense, setTrecLicense] = useState<string>("");
 
+  // headshot (create account + updates)
+  const [headshotFile, setHeadshotFile] = useState<File | null>(null);
+
   const [userProfile, setUserProfile] = useState<Profile | null>(null);
   const [statusMsg, setStatusMsg] = useState<string>("");
 
@@ -149,7 +131,6 @@ export default function App() {
   const [sessionStart, setSessionStart] = useState<string>("");
   const [sessionEnd, setSessionEnd] = useState<string>("");
   const [recentSessions, setRecentSessions] = useState<SessionRow[]>([]);
-  const [selectedSessionId, setSelectedSessionId] = useState<string>("");
 
   // roster tools
   const [rosterRows, setRosterRows] = useState<RosterRow[]>(() => {
@@ -174,11 +155,6 @@ export default function App() {
     const adminE = safeLower(adminEmailEnv);
     return !!e && !!adminE && e === adminE;
   }, [userProfile?.email, adminEmailEnv]);
-
-  const selectedSession = useMemo(() => {
-    if (!selectedSessionId) return null;
-    return recentSessions.find((s) => s.id === selectedSessionId) ?? null;
-  }, [recentSessions, selectedSessionId]);
 
   // Detect basic QR capability (BarcodeDetector is the lightest option)
   useEffect(() => {
@@ -218,6 +194,9 @@ export default function App() {
         return;
       }
 
+      const mappedUrl = await loadHeadshotFromMap(userId);
+      const photoUrl = mappedUrl ?? data.photo_url ?? null;
+
       setUserProfile({
         id: data.id,
         email: data.email ?? emailAddr,
@@ -225,10 +204,72 @@ export default function App() {
         middle_initial: data.middle_initial,
         last_name: data.last_name,
         trec_license: data.trec_license,
-        photo_url: data.photo_url ?? null,
+        photo_url: photoUrl,
       });
     } catch {
       setUserProfile({ id: userId, email: emailAddr });
+    }
+  }
+
+  async function loadHeadshotFromMap(userId: string): Promise<string | null> {
+    if (!supabase) return null;
+    try {
+      const { data, error } = await supabase
+        .from("gg_headshots_map")
+        .select("photo_url")
+        .eq("user_id", userId)
+        .maybeSingle();
+
+      if (error) return null;
+      // If column doesn't exist, Supabase will error and we'll return null.
+      return (data as any)?.photo_url ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  async function uploadHeadshotForUser(userId: string, file: File) {
+    setStatusMsg("");
+    if (!supabase) return;
+
+    try {
+      const extGuess = (file.name.split(".").pop() || "jpg").toLowerCase();
+      const ext = extGuess.replace(/[^a-z0-9]/g, "") || "jpg";
+      const path = `${userId}.${ext}`;
+
+      const { error: upErr } = await supabase.storage.from("headshots").upload(path, file, {
+        upsert: true,
+        contentType: file.type || "image/jpeg",
+      });
+      if (upErr) throw upErr;
+
+      const { data } = supabase.storage.from("headshots").getPublicUrl(path);
+      const publicUrl = data.publicUrl;
+
+      // Save URL on profile (authoritative for display)
+      try {
+        await supabase.from("gg_profiles").upsert({ id: userId, photo_url: publicUrl });
+      } catch {
+        // ignore
+      }
+
+      // Also attempt to save to gg_headshots_map (best-effort; column may or may not exist)
+      try {
+        const { error } = await supabase.from("gg_headshots_map").upsert({ user_id: userId, photo_url: publicUrl } as any);
+        if (error) throw error;
+      } catch {
+        try {
+          await supabase.from("gg_headshots_map").upsert({ user_id: userId } as any);
+        } catch {
+          // ignore
+        }
+      }
+
+      setUserProfile((prev) => (prev ? { ...prev, photo_url: publicUrl } : prev));
+      setHeadshotFile(null);
+      setStatusMsg("✅ Headshot uploaded.");
+    } catch (e: any) {
+      setStatusMsg(e?.message ?? "Headshot upload failed.");
     }
   }
 
@@ -261,6 +302,7 @@ export default function App() {
       if (!firstName) missing.push("first name");
       if (!lastName) missing.push("last name");
       if (!trecLicense) missing.push("TREC license");
+      if (!headshotFile) missing.push("headshot");
       if (missing.length) {
         setStatusMsg(`Please complete: ${missing.join(", ")}.`);
         return;
@@ -269,7 +311,7 @@ export default function App() {
       const { data, error } = await supabase.auth.signUp({ email, password });
       if (error) throw error;
 
-      // Best-effort profile upsert (non-fatal)
+      // Best-effort profile insert (non-fatal)
       try {
         await supabase.from("gg_profiles").upsert({
           id: data.user?.id,
@@ -281,6 +323,11 @@ export default function App() {
         });
       } catch {
         // ignore
+      }
+
+      // Upload headshot (required)
+      if (data.user && headshotFile) {
+        await uploadHeadshotForUser(data.user.id, headshotFile);
       }
 
       if (data.user) {
@@ -306,6 +353,7 @@ export default function App() {
       setMiddleInitial("");
       setLastName("");
       setTrecLicense("");
+      setHeadshotFile(null);
       setQrValue("");
       stopScan();
       setView("auth");
@@ -322,7 +370,9 @@ export default function App() {
   async function startScan() {
     setStatusMsg("");
     if (!scanSupported) {
-      setStatusMsg("QR scanning isn’t supported in this browser. Please use the mobile camera option (Safari/Chrome) or contact the instructor.");
+      setStatusMsg(
+        "QR scanning isn’t supported in this browser. Please use the mobile camera option (Safari/Chrome) or contact the instructor."
+      );
       return;
     }
     setScanning(true);
@@ -409,13 +459,11 @@ export default function App() {
     try {
       const { data, error } = await supabase
         .from("gg_sessions")
-        .select("id,title,starts_at,ends_at,course_name,created_at")
+        .select("id,title,start_time,end_time,created_at")
         .order("created_at", { ascending: false })
-        .limit(25);
+        .limit(10);
       if (error) throw error;
-      const rows = ((data as any) ?? []) as SessionRow[];
-      setRecentSessions(rows);
-      if (!selectedSessionId && rows.length) setSelectedSessionId(rows[0].id);
+      setRecentSessions((data as any) ?? []);
     } catch {
       setRecentSessions([]);
     }
@@ -435,47 +483,22 @@ export default function App() {
       setStatusMsg("Please provide a session title, start time, and end time.");
       return;
     }
-
     try {
-      const payload = {
+      const { error } = await supabase.from("class_sessions").insert({
         title: sessionTitle.trim(),
-        starts_at: new Date(sessionStart).toISOString(),
-        ends_at: new Date(sessionEnd).toISOString(),
+        start_time: new Date(sessionStart).toISOString(),
+        end_time: new Date(sessionEnd).toISOString(),
         created_by: userProfile?.id,
         course_name: selectedCourse,
-      };
-
-      const { data, error } = await supabase.from("gg_sessions").insert(payload).select("id").maybeSingle();
+      });
       if (error) throw error;
-
       setStatusMsg("✅ Class session created.");
       setSessionTitle("");
       setSessionStart("");
       setSessionEnd("");
-
       await loadRecentSessions();
-      const newId = (data as any)?.id as string | undefined;
-      if (newId) setSelectedSessionId(newId);
     } catch (e: any) {
       setStatusMsg(e?.message ?? "Session creation failed (table/permissions may need setup).");
-    }
-  }
-
-  async function deleteSelectedSession() {
-    setStatusMsg("");
-    if (!supabase) return;
-    if (!selectedSessionId) {
-      setStatusMsg("Select a session first.");
-      return;
-    }
-    try {
-      const { error } = await supabase.from("gg_sessions").delete().eq("id", selectedSessionId);
-      if (error) throw error;
-      setStatusMsg("🗑️ Session deleted.");
-      setSelectedSessionId("");
-      await loadRecentSessions();
-    } catch (e: any) {
-      setStatusMsg(e?.message ?? "Delete failed (permissions may need setup).");
     }
   }
 
@@ -542,16 +565,6 @@ export default function App() {
     persistRoster(next);
     setManualStudent({ first_name: "", mi: "", last_name: "", trec_license: "", email: "" });
     setStatusMsg("Student added to roster preview.");
-  }
-
-  async function copyToClipboard(value: string) {
-    try {
-      await navigator.clipboard.writeText(value);
-      setStatusMsg("Copied.");
-      window.setTimeout(() => setStatusMsg(""), 900);
-    } catch {
-      setStatusMsg("Copy failed.");
-    }
   }
 
   // ---------- Render ----------
@@ -658,6 +671,24 @@ export default function App() {
                   </div>
                 </div>
 
+                <div className="grid1">
+                  <div>
+                    <label className="label">Headshot (required)</label>
+                    <input
+                      className="input"
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0] || null;
+                        setHeadshotFile(f);
+                      }}
+                    />
+                    <div className="muted" style={{ marginTop: 6 }}>
+                      Upload a clear headshot for identity verification.
+                    </div>
+                  </div>
+                </div>
+
                 <div className="actions">
                   <button type="button" className="btnPrimary" onClick={onCreateAccount}>
                     Create Account
@@ -671,9 +702,32 @@ export default function App() {
         ) : (
           <>
             <div className="topRow">
-              <div>
-                <div className="welcome">{welcomeName()}</div>
-                <div className="muted">{userProfile?.email}</div>
+              <div className="welcomeRow">
+                <div>
+                  <div className="welcome">{welcomeName()}</div>
+                  <div className="muted">{userProfile?.email}</div>
+                </div>
+
+                <div className="welcomeRight">
+                  {userProfile?.photo_url ? (
+                    <img className="avatar" src={userProfile.photo_url} alt="Headshot" />
+                  ) : (
+                    <div className="avatarPlaceholder">No Photo</div>
+                  )}
+
+                  <label className="btnOutline" style={{ cursor: "pointer" }}>
+                    Upload
+                    <input
+                      type="file"
+                      accept="image/*"
+                      style={{ display: "none" }}
+                      onChange={(e) => {
+                        const f = e.target.files?.[0] || null;
+                        if (f && userProfile?.id) uploadHeadshotForUser(userProfile.id, f);
+                      }}
+                    />
+                  </label>
+                </div>
               </div>
 
               <div className="topActions">
@@ -746,7 +800,12 @@ export default function App() {
                   </div>
                   <div>
                     <label className="label">Session Title</label>
-                    <input className="input" value={sessionTitle} onChange={(e) => setSessionTitle(e.target.value)} placeholder="e.g., Morning Session" />
+                    <input
+                      className="input"
+                      value={sessionTitle}
+                      onChange={(e) => setSessionTitle(e.target.value)}
+                      placeholder="e.g., Morning Session"
+                    />
                   </div>
                 </div>
 
@@ -766,71 +825,6 @@ export default function App() {
                     Create New Class Session
                   </button>
                 </div>
-
-                <div className="sectionSubtitle">Existing Sessions</div>
-                <div className="grid2">
-                  <div>
-                    <label className="label">Select session</label>
-                    <select className="input" value={selectedSessionId} onChange={(e) => setSelectedSessionId(e.target.value)}>
-                      <option value="">— Select —</option>
-                      {recentSessions.map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {formatSessionLabel(s)}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="label">Actions</label>
-                    <div className="actions" style={{ justifyContent: "flex-start" }}>
-                      <button type="button" className="btnOutline" onClick={loadRecentSessions}>
-                        Refresh Sessions
-                      </button>
-                      <button type="button" className="btnOutline" onClick={deleteSelectedSession}>
-                        Delete Selected
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                {selectedSession ? (
-                  <>
-                    <div className="sectionSubtitle">Session QR Codes</div>
-                    <div className="grid2">
-                      <div>
-                        <div className="muted" style={{ marginBottom: 6 }}>
-                          Scan In
-                        </div>
-                        <img className="input" style={{ padding: 8 }} src={qrImgUrl(buildQrValue(selectedSession.id, "IN"))} alt="Scan In QR" />
-                        <div className="actions" style={{ justifyContent: "flex-start" }}>
-                          <button type="button" className="btnOutline" onClick={() => copyToClipboard(buildQrValue(selectedSession.id, "IN"))}>
-                            Copy QR Value
-                          </button>
-                        </div>
-                      </div>
-                      <div>
-                        <div className="muted" style={{ marginBottom: 6 }}>
-                          Scan Out
-                        </div>
-                        <img className="input" style={{ padding: 8 }} src={qrImgUrl(buildQrValue(selectedSession.id, "OUT"))} alt="Scan Out QR" />
-                        <div className="actions" style={{ justifyContent: "flex-start" }}>
-                          <button type="button" className="btnOutline" onClick={() => copyToClipboard(buildQrValue(selectedSession.id, "OUT"))}>
-                            Copy QR Value
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="status" style={{ marginTop: 10 }}>
-                      <strong>QR Values:</strong>
-                      <div style={{ marginTop: 6 }}>
-                        IN: {buildQrValue(selectedSession.id, "IN")}
-                        <br />
-                        OUT: {buildQrValue(selectedSession.id, "OUT")}
-                      </div>
-                    </div>
-                  </>
-                ) : null}
 
                 <div className="sectionSubtitle">Roster</div>
 
@@ -907,16 +901,12 @@ export default function App() {
                 {rosterRows.length ? (
                   <div className="table" style={{ marginTop: 10 }}>
                     <div className="tHead">
-                      <div> </div>
                       <div>Name</div>
                       <div>TREC</div>
                       <div>Email</div>
                     </div>
                     {rosterRows.slice(0, 10).map((r, idx) => (
                       <div className="tRow" key={idx}>
-                        <div>
-                          <div className="miniAvatarPlaceholder" title="Headshot pending" />
-                        </div>
                         <div>
                           {r.first_name} {r.mi ? `${r.mi}. ` : ""}
                           {r.last_name}
@@ -934,7 +924,6 @@ export default function App() {
                 </div>
                 <div className="table">
                   <div className="tHead">
-                    <div> </div>
                     <div>Title</div>
                     <div>Start</div>
                     <div>End</div>
@@ -942,10 +931,9 @@ export default function App() {
                   {recentSessions.length ? (
                     recentSessions.map((s) => (
                       <div className="tRow" key={s.id}>
-                        <div />
-                        <div>{(s.course_name ?? "").trim() ? `${s.course_name} — ${s.title}` : s.title}</div>
-                        <div>{new Date(s.starts_at).toLocaleString()}</div>
-                        <div>{new Date(s.ends_at).toLocaleString()}</div>
+                        <div>{s.title}</div>
+                        <div>{new Date(s.start_time).toLocaleString()}</div>
+                        <div>{new Date(s.end_time).toLocaleString()}</div>
                       </div>
                     ))
                   ) : (
@@ -964,4 +952,3 @@ export default function App() {
     </div>
   );
 }
-

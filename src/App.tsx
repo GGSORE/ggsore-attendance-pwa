@@ -651,7 +651,7 @@ export default function App() {
                       value={trecLicense}
                       onChange={(e) => setTrecLicense(e.target.value)}
                       autoComplete="off"
-                      placeholder="123456-SA"
+                      placeholder="As it appears in TREC's REALM system followed by -SA or -B."
                     />
                   </div>
                 </div>

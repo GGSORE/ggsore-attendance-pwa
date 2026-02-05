@@ -149,6 +149,7 @@ export default function App() {
   const [sessionStart, setSessionStart] = useState<string>("");
   const [sessionEnd, setSessionEnd] = useState<string>("");
   const [recentSessions, setRecentSessions] = useState<SessionRow[]>([]);
+  const [selectedSessionId, setSelectedSessionId] = useState<string>("");
 
   // roster tools
   const [rosterRows, setRosterRows] = useState<RosterRow[]>(() => {
@@ -423,12 +424,18 @@ export default function App() {
     }
   }
 
-  useEffect(() => {
+    useEffect(() => {
     if (view === "app" && isAdmin && appTab === "admin") {
       loadRecentSessions();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view, isAdmin, appTab]);
+
+  useEffect(() => {
+    if (!selectedSessionId && recentSessions.length) {
+      setSelectedSessionId(recentSessions[0].id);
+    }
+  }, [recentSessions, selectedSessionId]);
 
   async function createSession() {
     setStatusMsg("");
@@ -891,27 +898,33 @@ export default function App() {
                   </div>
                 ) : null}
 
-                <div className="sectionSubtitle" style={{ marginTop: 18 }}>
+                               <div className="sectionSubtitle" style={{ marginTop: 18 }}>
                   Recent Sessions
                 </div>
-                <div className="table">
-                  <div className="tHead">
-                    <div>Title</div>
-                    <div>Start</div>
-                    <div>End</div>
+
+                <div className="grid1">
+                  <div>
+                    <label className="label">Select a session</label>
+                    <select
+                      className="input"
+                      value={selectedSessionId}
+                      onChange={(e) => setSelectedSessionId(e.target.value)}
+                      disabled={!recentSessions.length}
+                    >
+                      {recentSessions.length ? (
+                        recentSessions.map((s) => (
+                          <option key={s.id} value={s.id}>
+                           {(s.course_name ? `${s.course_name} — ` : "")}{s.title} — {new Date(s.starts_at).toLocaleString()}
+
+                          </option>
+                        ))
+                      ) : (
+                        <option value="">No sessions yet.</option>
+                      )}
+                    </select>
                   </div>
-                  {recentSessions.length ? (
-                    recentSessions.map((s) => (
-                      <div className="tRow" key={s.id}>
-                        <div>{s.title}</div>
-                        <div>{new Date(s.starts_at).toLocaleString()}</div>
-                        <div>{new Date(s.ends_at).toLocaleString()}</div>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="tEmpty">No sessions yet.</div>
-                  )}
                 </div>
+
 
                 {statusMsg ? <div className="status">{statusMsg}</div> : null}
               </>

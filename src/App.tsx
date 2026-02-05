@@ -168,6 +168,7 @@ export default function App() {
     trec_license: "",
     email: "",
   });
+  const [rosterPhotoByTrec, setRosterPhotoByTrec] = useState<Record<string, string>>({});
 
   const isAdmin = useMemo(() => {
     const e = safeLower(userProfile?.email);

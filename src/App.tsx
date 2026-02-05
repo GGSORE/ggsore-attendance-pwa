@@ -19,9 +19,14 @@ type Profile = {
 type SessionRow = {
   id: string;
   title: string;
-  start_time: string;
-  end_time: string;
+  starts_at: string;
+  ends_at: string;
+  checkin_expires_at: string | null;
+  checkout_expires_at: string | null;
+  checkin_code: string;
+  checkout_code: string;
   created_at?: string;
+  course_name?: string | null;
 };
 
 type RosterRow = {
@@ -85,6 +90,21 @@ function parseCsv(text: string): string[][] {
   return rows;
 }
 
+function addMinutesISO(isoOrDate: string | Date, minutes: number): string {
+  const d = typeof isoOrDate === "string" ? new Date(isoOrDate) : new Date(isoOrDate);
+  d.setMinutes(d.getMinutes() + minutes);
+  return d.toISOString();
+}
+
+function genCode(len = 10): string {
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // avoids confusing chars
+  let out = "";
+  const arr = new Uint32Array(len);
+  crypto.getRandomValues(arr);
+  for (let i = 0; i < len; i++) out += alphabet[arr[i] % alphabet.length];
+  return out;
+}
+
 export default function App() {
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
   const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
@@ -108,9 +128,6 @@ export default function App() {
   const [middleInitial, setMiddleInitial] = useState<string>("");
   const [lastName, setLastName] = useState<string>("");
   const [trecLicense, setTrecLicense] = useState<string>("");
-
-  // headshot (create account + updates)
-  const [headshotFile, setHeadshotFile] = useState<File | null>(null);
 
   const [userProfile, setUserProfile] = useState<Profile | null>(null);
   const [statusMsg, setStatusMsg] = useState<string>("");
@@ -183,6 +200,7 @@ export default function App() {
     if (!supabase) return;
 
     try {
+      // IMPORTANT: Your Supabase table list shows gg_profiles (not "profiles")
       const { data, error } = await supabase
         .from("gg_profiles")
         .select("id,email,first_name,middle_initial,last_name,trec_license,photo_url")
@@ -194,9 +212,6 @@ export default function App() {
         return;
       }
 
-      const mappedUrl = await loadHeadshotFromMap(userId);
-      const photoUrl = mappedUrl ?? data.photo_url ?? null;
-
       setUserProfile({
         id: data.id,
         email: data.email ?? emailAddr,
@@ -204,72 +219,10 @@ export default function App() {
         middle_initial: data.middle_initial,
         last_name: data.last_name,
         trec_license: data.trec_license,
-        photo_url: photoUrl,
+        photo_url: data.photo_url ?? null,
       });
     } catch {
       setUserProfile({ id: userId, email: emailAddr });
-    }
-  }
-
-  async function loadHeadshotFromMap(userId: string): Promise<string | null> {
-    if (!supabase) return null;
-    try {
-      const { data, error } = await supabase
-        .from("gg_headshots_map")
-        .select("photo_url")
-        .eq("user_id", userId)
-        .maybeSingle();
-
-      if (error) return null;
-      // If column doesn't exist, Supabase will error and we'll return null.
-      return (data as any)?.photo_url ?? null;
-    } catch {
-      return null;
-    }
-  }
-
-  async function uploadHeadshotForUser(userId: string, file: File) {
-    setStatusMsg("");
-    if (!supabase) return;
-
-    try {
-      const extGuess = (file.name.split(".").pop() || "jpg").toLowerCase();
-      const ext = extGuess.replace(/[^a-z0-9]/g, "") || "jpg";
-      const path = `${userId}.${ext}`;
-
-      const { error: upErr } = await supabase.storage.from("headshots").upload(path, file, {
-        upsert: true,
-        contentType: file.type || "image/jpeg",
-      });
-      if (upErr) throw upErr;
-
-      const { data } = supabase.storage.from("headshots").getPublicUrl(path);
-      const publicUrl = data.publicUrl;
-
-      // Save URL on profile (authoritative for display)
-      try {
-        await supabase.from("gg_profiles").upsert({ id: userId, photo_url: publicUrl });
-      } catch {
-        // ignore
-      }
-
-      // Also attempt to save to gg_headshots_map (best-effort; column may or may not exist)
-      try {
-        const { error } = await supabase.from("gg_headshots_map").upsert({ user_id: userId, photo_url: publicUrl } as any);
-        if (error) throw error;
-      } catch {
-        try {
-          await supabase.from("gg_headshots_map").upsert({ user_id: userId } as any);
-        } catch {
-          // ignore
-        }
-      }
-
-      setUserProfile((prev) => (prev ? { ...prev, photo_url: publicUrl } : prev));
-      setHeadshotFile(null);
-      setStatusMsg("✅ Headshot uploaded.");
-    } catch (e: any) {
-      setStatusMsg(e?.message ?? "Headshot upload failed.");
     }
   }
 
@@ -302,7 +255,6 @@ export default function App() {
       if (!firstName) missing.push("first name");
       if (!lastName) missing.push("last name");
       if (!trecLicense) missing.push("TREC license");
-      if (!headshotFile) missing.push("headshot");
       if (missing.length) {
         setStatusMsg(`Please complete: ${missing.join(", ")}.`);
         return;
@@ -311,7 +263,7 @@ export default function App() {
       const { data, error } = await supabase.auth.signUp({ email, password });
       if (error) throw error;
 
-      // Best-effort profile insert (non-fatal)
+      // Best-effort profile upsert (non-fatal)
       try {
         await supabase.from("gg_profiles").upsert({
           id: data.user?.id,
@@ -323,11 +275,6 @@ export default function App() {
         });
       } catch {
         // ignore
-      }
-
-      // Upload headshot (required)
-      if (data.user && headshotFile) {
-        await uploadHeadshotForUser(data.user.id, headshotFile);
       }
 
       if (data.user) {
@@ -353,7 +300,6 @@ export default function App() {
       setMiddleInitial("");
       setLastName("");
       setTrecLicense("");
-      setHeadshotFile(null);
       setQrValue("");
       stopScan();
       setView("auth");
@@ -440,8 +386,11 @@ export default function App() {
       setStatusMsg("Please scan the QR code first.");
       return;
     }
+
+    // NOTE: We are not changing your attendance/check-in schema here.
+    // This insert will succeed only if your table/columns match.
     try {
-      const { error } = await supabase.from("checkins").insert({
+      const { error } = await supabase.from("gg_attendance").insert({
         user_id: userProfile?.id,
         qr_value: qrValue.trim(),
       });
@@ -459,12 +408,16 @@ export default function App() {
     try {
       const { data, error } = await supabase
         .from("gg_sessions")
-        .select("id,title,start_time,end_time,created_at")
+        .select(
+          "id,title,starts_at,ends_at,checkin_expires_at,checkout_expires_at,checkin_code,checkout_code,created_at,course_name"
+        )
         .order("created_at", { ascending: false })
         .limit(10);
+
       if (error) throw error;
       setRecentSessions((data as any) ?? []);
-    } catch {
+    } catch (e: any) {
+      // If anything goes wrong, keep UI stable, just show empty list.
       setRecentSessions([]);
     }
   }
@@ -479,19 +432,37 @@ export default function App() {
   async function createSession() {
     setStatusMsg("");
     if (!supabase) return;
+
     if (!sessionTitle.trim() || !sessionStart || !sessionEnd) {
       setStatusMsg("Please provide a session title, start time, and end time.");
       return;
     }
+
+    // Convert datetime-local -> ISO
+    const startsISO = new Date(sessionStart).toISOString();
+    const endsISO = new Date(sessionEnd).toISOString();
+
+    // Reasonable defaults (can be changed later)
+    const checkinExpiresISO = addMinutesISO(startsISO, 30); // 30 minutes after start
+    const checkoutExpiresISO = addMinutesISO(endsISO, 30); // 30 minutes after end
+
+    const checkinCode = genCode(10);
+    const checkoutCode = genCode(10);
+
     try {
       const { error } = await supabase.from("gg_sessions").insert({
         title: sessionTitle.trim(),
-        start_time: new Date(sessionStart).toISOString(),
-        end_time: new Date(sessionEnd).toISOString(),
-        created_by: userProfile?.id,
-        course_name: selectedCourse,
+        starts_at: startsISO,
+        ends_at: endsISO,
+        checkin_expires_at: checkinExpiresISO,
+        checkout_expires_at: checkoutExpiresISO,
+        checkin_code: checkinCode,
+        checkout_code: checkoutCode,
+        course_name: selectedCourse, // ✅ you added this column
       });
+
       if (error) throw error;
+
       setStatusMsg("✅ Class session created.");
       setSessionTitle("");
       setSessionStart("");
@@ -532,7 +503,9 @@ export default function App() {
       const iEmail = idx("email");
 
       if (iFirst === -1 || iLast === -1 || iTrec === -1) {
-        setRosterError("CSV must include columns: first_name, last_name, trec_license (email and mi are optional).");
+        setRosterError(
+          "CSV must include columns: first_name, last_name, trec_license (email and mi are optional)."
+        );
         return;
       }
 
@@ -632,7 +605,8 @@ export default function App() {
                 <div className="sectionTitle">Create Account Details</div>
 
                 <div className="noteBox">
-                  <strong>Important:</strong> Enter your name exactly as it appears on your TREC license, including middle initial.
+                  <strong>Important:</strong> Enter your name exactly as it appears on your TREC license, including middle
+                  initial.
                   <br />
                   For the TREC license number, be sure to include the appropriate suffix: -SA, -B, or -BB.
                 </div>
@@ -671,24 +645,6 @@ export default function App() {
                   </div>
                 </div>
 
-                <div className="grid1">
-                  <div>
-                    <label className="label">Headshot (required)</label>
-                    <input
-                      className="input"
-                      type="file"
-                      accept="image/*"
-                      onChange={(e) => {
-                        const f = e.target.files?.[0] || null;
-                        setHeadshotFile(f);
-                      }}
-                    />
-                    <div className="muted" style={{ marginTop: 6 }}>
-                      Upload a clear headshot for identity verification.
-                    </div>
-                  </div>
-                </div>
-
                 <div className="actions">
                   <button type="button" className="btnPrimary" onClick={onCreateAccount}>
                     Create Account
@@ -702,32 +658,9 @@ export default function App() {
         ) : (
           <>
             <div className="topRow">
-              <div className="welcomeRow">
-                <div>
-                  <div className="welcome">{welcomeName()}</div>
-                  <div className="muted">{userProfile?.email}</div>
-                </div>
-
-                <div className="welcomeRight">
-                  {userProfile?.photo_url ? (
-                    <img className="avatar" src={userProfile.photo_url} alt="Headshot" />
-                  ) : (
-                    <div className="avatarPlaceholder">No Photo</div>
-                  )}
-
-                  <label className="btnOutline" style={{ cursor: "pointer" }}>
-                    Upload
-                    <input
-                      type="file"
-                      accept="image/*"
-                      style={{ display: "none" }}
-                      onChange={(e) => {
-                        const f = e.target.files?.[0] || null;
-                        if (f && userProfile?.id) uploadHeadshotForUser(userProfile.id, f);
-                      }}
-                    />
-                  </label>
-                </div>
+              <div>
+                <div className="welcome">{welcomeName()}</div>
+                <div className="muted">{userProfile?.email}</div>
               </div>
 
               <div className="topActions">
@@ -932,8 +865,8 @@ export default function App() {
                     recentSessions.map((s) => (
                       <div className="tRow" key={s.id}>
                         <div>{s.title}</div>
-                        <div>{new Date(s.start_time).toLocaleString()}</div>
-                        <div>{new Date(s.end_time).toLocaleString()}</div>
+                        <div>{new Date(s.starts_at).toLocaleString()}</div>
+                        <div>{new Date(s.ends_at).toLocaleString()}</div>
                       </div>
                     ))
                   ) : (

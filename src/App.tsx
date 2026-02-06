@@ -920,28 +920,6 @@ export default function App() {
                 </div>
 
                 <div className="sectionSubtitle">Roster Preview</div>
-                <div className="muted">{rosterRows.length ? `${rosterRows.length} student(s) loaded.` : "No roster loaded yet."}</div>
-
-                {rosterRows.length ? (
-                  <div className="table" style={{ marginTop: 10 }}>
-                    <div className="tHead">
-                      <div>Name</div>
-                      <div>TREC</div>
-                      <div>Email</div>
-                    </div>
-                    {rosterRows.slice(0, 10).map((r, idx) => (
-                      <div className="tRow" key={idx}>
-                        <div>
-                          {r.first_name} {r.mi ? `${r.mi}. ` : ""}
-                          {r.last_name}
-                        </div>
-                        <div>{r.trec_license}</div>
-                        <div>{r.email || "—"}</div>
-                      </div>
-                    ))}
-                    {rosterRows.length > 10 ? <div className="tEmpty">Showing first 10 only.</div> : null}
-                  </div>
-                ) : null}                <div className="sectionSubtitle">Roster Preview</div>
                 <div className="muted">
                   {rosterRows.length ? `${rosterRows.length} student(s) loaded.` : "No roster loaded yet."}
                 </div>
@@ -963,10 +941,96 @@ export default function App() {
                       <div>Email</div>
                     </div>
 
-                    {rosterRows.slice(0, 10).map((r, idx) => {
+                    {rosterRows.map((r, idx) => {
                       const fullName = `${r.first_name}${r.mi ? ` ${r.mi}.` : ""} ${r.last_name}`.trim();
-                      const photoUrl = rosterPhotoByTrec[(r.trec_license || "").trim()] || "";
-                      const initials = `${(r.first_na_
+                      const licenseKey = (r.trec_license || "").trim();
+                      const photoUrl = rosterPhotoByTrec[licenseKey] || "";
+                      const initials = `${(r.first_name?.[0] || "").toUpperCase()}${(r.last_name?.[0] || "").toUpperCase()}`;
+
+                      return (
+                        <div
+                          className="tRow"
+                          key={idx}
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: "56px 2fr 1fr 2fr",
+                            alignItems: "center",
+                            columnGap: 12,
+                          }}
+                        >
+                          <div style={{ display: "flex", alignItems: "center" }}>
+                            {photoUrl ? (
+                              <img
+                                src={photoUrl}
+                                alt={fullName}
+                                style={{
+                                  width: 44,
+                                  height: 44,
+                                  borderRadius: 10,
+                                  objectFit: "cover",
+                                  display: "block",
+                                }}
+                              />
+                            ) : (
+                              <div
+                                title="No headshot on file"
+                                style={{
+                                  width: 44,
+                                  height: 44,
+                                  borderRadius: 10,
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  fontWeight: 700,
+                                  fontSize: 12,
+                                  opacity: 0.7,
+                                  border: "1px solid rgba(0,0,0,0.12)",
+                                }}
+                              >
+                                {initials || "—"}
+                              </div>
+                            )}
+                          </div>
+
+                          <div
+                            title={fullName}
+                            style={{
+                              whiteSpace: "nowrap",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                            }}
+                          >
+                            {fullName}
+                          </div>
+
+                          <div
+                            title={r.trec_license}
+                            style={{
+                              whiteSpace: "nowrap",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                            }}
+                          >
+                            {r.trec_license}
+                          </div>
+
+                          <div
+                            title={r.email || ""}
+                            style={{
+                              whiteSpace: "nowrap",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                            }}
+                          >
+                            {r.email || "—"}
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                  </div>
+                ) : null}
+
 
                                <div className="sectionSubtitle" style={{ marginTop: 18 }}>
                   Recent Sessions

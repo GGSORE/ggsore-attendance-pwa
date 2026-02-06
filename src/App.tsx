@@ -432,11 +432,55 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view, isAdmin, appTab]);
 
-  useEffect(() => {
+    useEffect(() => {
     if (!selectedSessionId && recentSessions.length) {
       setSelectedSessionId(recentSessions[0].id);
     }
   }, [recentSessions, selectedSessionId]);
+
+  useEffect(() => {
+    if (!supabase) return;
+    if (view !== "app" || !isAdmin || appTab !== "admin") return;
+    if (!rosterRows.length) {
+      setRosterPhotoByTrec({});
+      return;
+    }
+
+    const licenses = Array.from(
+      new Set(
+        rosterRows
+          .map((r) => (r.trec_license || "").trim())
+          .filter((x) => x.length > 0)
+      )
+    );
+
+    if (!licenses.length) {
+      setRosterPhotoByTrec({});
+      return;
+    }
+
+    (async () => {
+      try {
+        const { data, error } = await supabase
+          .from("gg_profiles")
+          .select("trec_license,photo_url")
+          .in("trec_license", licenses);
+
+        if (error) throw error;
+
+        const map: Record<string, string> = {};
+        (data as any[] | null)?.forEach((p) => {
+          const key = (p?.trec_license || "").trim();
+          const url = (p?.photo_url || "").trim();
+          if (key && url) map[key] = url;
+        });
+
+        setRosterPhotoByTrec(map);
+      } catch {
+        setRosterPhotoByTrec({});
+      }
+    })();
+  }, [supabase, view, isAdmin, appTab, rosterRows]);
 
   async function createSession() {
     setStatusMsg("");
@@ -897,7 +941,32 @@ export default function App() {
                     ))}
                     {rosterRows.length > 10 ? <div className="tEmpty">Showing first 10 only.</div> : null}
                   </div>
-                ) : null}
+                ) : null}                <div className="sectionSubtitle">Roster Preview</div>
+                <div className="muted">
+                  {rosterRows.length ? `${rosterRows.length} student(s) loaded.` : "No roster loaded yet."}
+                </div>
+
+                {rosterRows.length ? (
+                  <div className="table" style={{ marginTop: 10 }}>
+                    <div
+                      className="tHead"
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "56px 2fr 1fr 2fr",
+                        alignItems: "center",
+                        columnGap: 12,
+                      }}
+                    >
+                      <div>Photo</div>
+                      <div>Name</div>
+                      <div>TREC</div>
+                      <div>Email</div>
+                    </div>
+
+                    {rosterRows.slice(0, 10).map((r, idx) => {
+                      const fullName = `${r.first_name}${r.mi ? ` ${r.mi}.` : ""} ${r.last_name}`.trim();
+                      const photoUrl = rosterPhotoByTrec[(r.trec_license || "").trim()] || "";
+                      const initials = `${(r.first_na_
 
                                <div className="sectionSubtitle" style={{ marginTop: 18 }}>
                   Recent Sessions

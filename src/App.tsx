@@ -1270,10 +1270,10 @@ Create New Class Session
   background: "rgba(139,0,0,0.06)",
 
   // ✅ force the width to obey (beats min-width / flex rules)
-  width: 90,
-  minWidth: 90,
-  maxWidth: 90,
-  flex: "0 0 90px",
+  width: 92,
+  minWidth: 92,
+  maxWidth: 92,
+  flex: "0 0 92px",
   boxSizing: "border-box",
 
   // ✅ keep right edge exactly where it is

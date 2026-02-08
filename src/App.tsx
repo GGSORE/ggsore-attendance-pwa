@@ -1012,379 +1012,251 @@ Create New Class Session
 </button>
 </div>
 
-<div className="sectionSubtitle">Roster</div>
-
-<div className="grid2">
-<div>
-<label className="label">Upload roster CSV</label>
-<input
-className="input"
-type="file"
-accept=".csv,text/csv"
-onChange={(e) => {
-const f = e.target.files?.[0];
-if (f) handleRosterUpload(f);
-}}
-/>
-{rosterError ? <div className="status">{rosterError}</div> : null}
-</div>
-
-<div>
-<label className="label">Manual add</label>
-<div className="grid3">
-<input
-className="input"
-value={manualStudent.first_name}
-onChange={(e) => setManualStudent({ ...manualStudent, first_name: e.target.value })}
-placeholder="First"
-autoComplete="off"
-/>
-<input
-className="input"
-value={manualStudent.mi}
-onChange={(e) => setManualStudent({ ...manualStudent, mi: e.target.value })}
-placeholder="MI"
-maxLength={1}
-autoComplete="off"
-/>
-<input
-className="input"
-value={manualStudent.last_name}
-onChange={(e) => setManualStudent({ ...manualStudent, last_name: e.target.value })}
-placeholder="Last"
-autoComplete="off"
-/>
-</div>
-
-<div className="grid2" style={{ marginTop: 10 }}>
-<input
-className="input"
-value={manualStudent.trec_license}
-onChange={(e) => setManualStudent({ ...manualStudent, trec_license: e.target.value })}
-placeholder="TREC License (123456-SA)"
-autoComplete="off"
-/>
-<input
-className="input"
-value={manualStudent.email}
-onChange={(e) => setManualStudent({ ...manualStudent, email: e.target.value })}
-placeholder="Email (optional)"
-autoComplete="off"
-/>
-</div>
-
-<div className="actions" style={{ justifyContent: "flex-start" }}>
-<button type="button" className="btnOutline" onClick={addManualStudentToRoster}>
-Add Student
-</button>
-</div>
-</div>
-</div>
-
-  <div className="sectionSubtitle" style={{ marginTop: 18 }}>
-  Current Session
-</div>
-
-<div
-  className="noteBox"
-  style={{
-    marginTop: 8,
-    padding: 12,
-    borderRadius: 14,
-    background: "#fff",
-    boxShadow: "0 2px 10px rgba(0,0,0,0.06)",
-    border: "1px solid rgba(0,0,0,0.06)",
-  }}
->
-  <div style={{ fontWeight: 800, marginBottom: 6 }}>Selected session</div>
-  <div className="muted" style={{ lineHeight: 1.35 }}>
-    {selectedSessionId
-      ? (() => {
-          const s = recentSessions.find((x) => x.id === selectedSessionId);
-          if (!s) return "Session selected (details not loaded).";
-          return `${s.course_name ? `${s.course_name} — ` : ""}${s.title} — ${new Date(s.starts_at).toLocaleString()}`;
-        })()
-      : "No session selected yet."}
-  </div>
-</div>
-
-<div className="grid1" style={{ marginTop: 10 }}>
-  <div>
-    <label className="label">Select a session</label>
-    <select
-      className="input"
-      value={selectedSessionId}
-      onChange={(e) => setSelectedSessionId(e.target.value)}
-      disabled={!recentSessions.length}
-    >
-      {recentSessions.length ? (
-        recentSessions.map((s) => (
-          <option key={s.id} value={s.id}>
-            {(s.course_name ? `${s.course_name} — ` : "")}
-            {s.title} — {new Date(s.starts_at).toLocaleString()}
-          </option>
-        ))
-      ) : (
-        <option value="">No sessions yet.</option>
-      )}
-    </select>
-  </div>
-</div>
-
-  
 <div className="sectionSubtitle">Roster Preview</div>
 <div className="muted">
-{rosterRows.length ? `${rosterRows.length} student(s) loaded.` : "No roster loaded yet."}
+  {rosterRows.length ? `${rosterRows.length} student(s) loaded.` : "No roster loaded yet."}
 </div>
 
 {rosterRows.length ? (
-<div className="table" style={{ marginTop: 10 }}>
-
-<div
-  className="tHead"
-  style={{
-    display: "grid",
-    gridTemplateColumns: "56px 2fr 1fr 2fr 220px",
-    alignItems: "center",
-    columnGap: 12,
-    background: "#e8f3ff",           // ✅ light blue header
-    borderRadius: 10,
-    padding: "10px 12px",
-    fontWeight: 800,
-  }}
->
-<div
-  className="tHead"
-  style={{
-    display: "grid",
-    gridTemplateColumns: "56px 2.6fr 1.1fr 1.7fr 240px",
-    alignItems: "center",
-    columnGap: 12,
-    background: "rgba(45, 120, 255, 0.10)", // light blue header
-    borderRadius: 10,
-    padding: "10px 12px",
-  }}
->
-  <div>Photo</div>
-  <div>Name (Email)</div>
-  <div>TREC</div>
-  <div>Status</div>
-  <div style={{ textAlign: "right" }}>Actions</div>
-</div>
-
-{rosterRows.map((r, idx) => {
-  const fullName = `${r.first_name}${r.mi ? ` ${r.mi}.` : ""} ${r.last_name}`.trim();
-  const licenseKey = (r.trec_license || "").trim();
-  const photoUrl = rosterPhotoByTrec[licenseKey] || "";
-  const initials = `${(r.first_name?.[0] || "").toUpperCase()}${(r.last_name?.[0] || "").toUpperCase()}`;
-
-  const actions = rosterActionsByTrec[licenseKey] || {};
-  const checkInAt = actions.checkInAt || "";
-  const checkOutAt = actions.checkOutAt || "";
-  const noShowAt = actions.noShowAt || "";
-
-  return (
+  <div className="table" style={{ marginTop: 10 }}>
+    {/* ✅ ONE header row ONLY (5 columns) */}
     <div
-      className="tRow"
-      key={idx}
+      className="tHead"
       style={{
         display: "grid",
         gridTemplateColumns: "56px 2.6fr 1.1fr 1.7fr 240px",
         alignItems: "center",
         columnGap: 12,
+        background: "rgba(45, 120, 255, 0.10)", // ✅ light blue header
+        borderRadius: 10,
         padding: "10px 12px",
+        fontWeight: 800,
       }}
     >
-      {/* Photo */}
-      <div style={{ display: "flex", alignItems: "center" }}>
-        {photoUrl ? (
-          <img
-            src={photoUrl}
-            alt={fullName}
-            style={{
-              width: 44,
-              height: 44,
-              borderRadius: 10,
-              objectFit: "cover",
-              display: "block",
-            }}
-          />
-        ) : (
+      <div>Photo</div>
+      <div>Name / Email</div>
+      <div>TREC</div>
+      <div>Status</div>
+      <div style={{ textAlign: "right" }}>Actions</div>
+    </div>
+
+    {rosterRows.map((r, idx) => {
+      const fullName = `${r.first_name}${r.mi ? ` ${r.mi}.` : ""} ${r.last_name}`.trim();
+      const licenseKey = (r.trec_license || "").trim();
+      const photoUrl = rosterPhotoByTrec[licenseKey] || "";
+      const initials = `${(r.first_name?.[0] || "").toUpperCase()}${(r.last_name?.[0] || "").toUpperCase()}`;
+
+      const actions = rosterActionsByTrec[licenseKey] || {};
+      const checkInAt = actions.checkInAt || "";
+      const checkOutAt = actions.checkOutAt || "";
+      const noShowAt = actions.noShowAt || "";
+
+      return (
+        <div
+          className="tRow"
+          key={idx}
+          style={{
+            display: "grid",
+            gridTemplateColumns: "56px 2.6fr 1.1fr 1.7fr 240px",
+            alignItems: "center",
+            columnGap: 12,
+            padding: "10px 12px",
+          }}
+        >
+          {/* Photo */}
+          <div style={{ display: "flex", alignItems: "center" }}>
+            {photoUrl ? (
+              <img
+                src={photoUrl}
+                alt={fullName}
+                style={{
+                  width: 44,
+                  height: 44,
+                  borderRadius: 10,
+                  objectFit: "cover",
+                  display: "block",
+                }}
+              />
+            ) : (
+              <div
+                title="No headshot on file"
+                style={{
+                  width: 44,
+                  height: 44,
+                  borderRadius: 10,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontWeight: 700,
+                  fontSize: 12,
+                  opacity: 0.7,
+                  border: "1px solid rgba(0,0,0,0.12)",
+                }}
+              >
+                {initials || "—"}
+              </div>
+            )}
+          </div>
+
+          {/* Name + Email (2 lines, single-line each, no wrap) */}
+          <div style={{ minWidth: 0 }}>
+            <div
+              title={fullName}
+              style={{
+                fontWeight: 800,
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+              }}
+            >
+              {fullName || "—"}
+            </div>
+
+            <div
+              title={r.email || ""}
+              style={{
+                marginTop: 2,
+                fontSize: 12,
+                opacity: 0.85,
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+              }}
+            >
+              {r.email || "—"}
+            </div>
+          </div>
+
+          {/* TREC */}
           <div
-            title="No headshot on file"
+            title={r.trec_license}
             style={{
-              width: 44,
-              height: 44,
-              borderRadius: 10,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
               fontWeight: 700,
-              fontSize: 12,
-              opacity: 0.7,
-              border: "1px solid rgba(0,0,0,0.12)",
             }}
           >
-            {initials || "—"}
+            {r.trec_license}
           </div>
-        )}
-      </div>
 
-      {/* Name + Email (stacked, single-line each, no wrap) */}
-      <div style={{ minWidth: 0 }}>
-        <div
-          title={fullName}
-          style={{
-            fontWeight: 800,
-            whiteSpace: "nowrap",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-          }}
-        >
-          {fullName || "—"}
+          {/* Status w/ timestamps (check-in stays even after check-out) */}
+          <div style={{ minWidth: 0, fontSize: 12, lineHeight: 1.25 }}>
+            <div style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              <strong>In:</strong> {checkInAt || "—"}
+            </div>
+            <div style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              <strong>Out:</strong> {checkOutAt || "—"}
+            </div>
+            <div style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              <strong>No-Show:</strong> {noShowAt || "—"}
+            </div>
+          </div>
+
+          {/* Actions */}
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
+            <button
+              type="button"
+              className="btnOutline"
+              style={{ padding: "6px 10px" }}
+              onClick={() => {
+                const ts = new Date().toLocaleString();
+                setRosterActionsByTrec((prev) => ({
+                  ...prev,
+                  [licenseKey]: { ...(prev[licenseKey] || {}), checkInAt: ts },
+                }));
+                setStatusMsg(`✅ Checked in: ${fullName}`);
+              }}
+            >
+              Check In
+            </button>
+
+            <button
+              type="button"
+              className="btnOutline"
+              style={{ padding: "6px 10px" }}
+              onClick={() => {
+                const ts = new Date().toLocaleString();
+                setRosterActionsByTrec((prev) => ({
+                  ...prev,
+                  [licenseKey]: { ...(prev[licenseKey] || {}), checkOutAt: ts },
+                }));
+                setStatusMsg(`✅ Checked out: ${fullName}`);
+              }}
+            >
+              Check Out
+            </button>
+
+            <button
+              type="button"
+              className="tabBtn small"
+              style={{
+                padding: "6px 12px",
+                borderRadius: 999,
+                lineHeight: 1,
+                color: "#8B0000",
+                border: "2px solid #8B0000",
+                background: "rgba(139,0,0,0.06)",
+              }}
+              onClick={() => {
+                const ts = new Date().toLocaleString();
+                setRosterActionsByTrec((prev) => ({
+                  ...prev,
+                  [licenseKey]: { ...(prev[licenseKey] || {}), noShowAt: ts },
+                }));
+                setStatusMsg(`🟥 No-Show: ${fullName}`);
+              }}
+            >
+              No-Show
+            </button>
+
+            <button
+              type="button"
+              className="btnOutline"
+              title="Undo / Clear Status"
+              style={{ width: 34, height: 34, padding: 0 }}
+              onClick={() => {
+                setRosterActionsByTrec((prev) => ({
+                  ...prev,
+                  [licenseKey]: { checkInAt: undefined, checkOutAt: undefined, noShowAt: undefined },
+                }));
+                setStatusMsg(`↺ Cleared: ${fullName}`);
+              }}
+            >
+              ↺
+            </button>
+
+            <button
+              type="button"
+              className="btnOutline"
+              title="Remove from roster"
+              style={{ width: 34, height: 34, padding: 0 }}
+              onClick={() => {
+                const next = rosterRows.filter((_, i) => i !== idx);
+                persistRoster(next);
+                setRosterActionsByTrec((prev) => {
+                  const copy = { ...prev };
+                  delete copy[licenseKey];
+                  return copy;
+                });
+                setStatusMsg(`🗑 Removed: ${fullName}`);
+              }}
+            >
+              🗑
+            </button>
+          </div>
         </div>
-
-        <div
-          title={r.email || ""}
-          style={{
-            marginTop: 2,
-            fontSize: 12,
-            opacity: 0.85,
-            whiteSpace: "nowrap",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-          }}
-        >
-          {r.email || "—"}
-        </div>
-      </div>
-
-      {/* License (to the right of name) */}
-      <div
-        title={r.trec_license}
-        style={{
-          whiteSpace: "nowrap",
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          fontWeight: 700,
-        }}
-      >
-        {r.trec_license}
-      </div>
-
-      {/* Status with timestamps (check-in stays even after check-out) */}
-      <div style={{ minWidth: 0, fontSize: 12, lineHeight: 1.25 }}>
-        <div style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-          <strong>In:</strong> {checkInAt || "—"}
-        </div>
-        <div style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-          <strong>Out:</strong> {checkOutAt || "—"}
-        </div>
-        <div style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-          <strong>No-Show:</strong> {noShowAt || "—"}
-        </div>
-      </div>
-
-      {/* Actions */}
-      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
-        <button
-          type="button"
-          className="btnOutline"
-          style={{ padding: "6px 10px" }}
-          onClick={() => {
-            const ts = new Date().toLocaleString();
-            setRosterActionsByTrec((prev) => ({
-              ...prev,
-              [licenseKey]: { ...(prev[licenseKey] || {}), checkInAt: ts },
-            }));
-            setStatusMsg(`✅ Checked in: ${fullName}`);
-          }}
-        >
-          Check In
-        </button>
-
-        <button
-          type="button"
-          className="btnOutline"
-          style={{ padding: "6px 10px" }}
-          onClick={() => {
-            const ts = new Date().toLocaleString();
-            setRosterActionsByTrec((prev) => ({
-              ...prev,
-              [licenseKey]: { ...(prev[licenseKey] || {}), checkOutAt: ts },
-            }));
-            setStatusMsg(`✅ Checked out: ${fullName}`);
-          }}
-        >
-          Check Out
-        </button>
-
-        <button
-          type="button"
-          className="tabBtn small"
-          style={{
-            padding: "6px 12px",
-            borderRadius: 999,
-            lineHeight: 1,
-            color: "#8B0000", // deep red text
-            border: "2px solid #8B0000", // red border circle/pill
-            background: "rgba(139,0,0,0.06)",
-          }}
-          onClick={() => {
-            const ts = new Date().toLocaleString();
-            setRosterActionsByTrec((prev) => ({
-              ...prev,
-              [licenseKey]: { ...(prev[licenseKey] || {}), noShowAt: ts },
-            }));
-            setStatusMsg(`🟥 No-Show: ${fullName}`);
-          }}
-        >
-          No-Show
-        </button>
-
-        <button
-          type="button"
-          className="btnOutline"
-          title="Undo / Clear Status"
-          style={{ width: 34, height: 34, padding: 0 }}
-          onClick={() => {
-            setRosterActionsByTrec((prev) => ({
-              ...prev,
-              [licenseKey]: { checkInAt: undefined, checkOutAt: undefined, noShowAt: undefined },
-            }));
-            setStatusMsg(`↺ Cleared: ${fullName}`);
-          }}
-        >
-          ↺
-        </button>
-
-        <button
-          type="button"
-          className="btnOutline"
-          title="Remove from roster"
-          style={{ width: 34, height: 34, padding: 0 }}
-          onClick={() => {
-            const next = rosterRows.filter((_, i) => i !== idx);
-            persistRoster(next);
-            setRosterActionsByTrec((prev) => {
-              const copy = { ...prev };
-              delete copy[licenseKey];
-              return copy;
-            });
-            setStatusMsg(`🗑 Removed: ${fullName}`);
-          }}
-        >
-          🗑
-        </button>
-      </div>
-    </div>
-  );
-})}
-
-</div>
+      );
+    })}
+  </div>
 ) : null}
 
 {statusMsg ? <div className="status">{statusMsg}</div> : null}
+</>
+)}
+</>
+)}
+</>
 
 <footer className="footer">© {new Date().getFullYear()} ClassCheck Pro™</footer>
 </div>

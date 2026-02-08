@@ -842,59 +842,64 @@ Sign out
 
     return (
       <>
-        <div style={{ flex: "0 0 auto" }}>
-          {photo ? (
-            <img
-              src={photo}
-              alt={fullName || "Headshot"}
-              style={{
-                width: 56,
-                height: 56,
-                borderRadius: 12,
-                objectFit: "cover",
-                display: "block",
-              }}
-            />
-          ) : (
-            <div
-              title="No headshot on file"
-              style={{
-                width: 56,
-                height: 56,
-                borderRadius: 12,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontWeight: 800,
-                fontSize: 14,
-                opacity: 0.8,
-                border: "1px solid rgba(0,0,0,0.12)",
-              }}
-            >
-              {initials || "—"}
-            </div>
-          )}
-        </div>
+{/* Photo + text column */}
+<div style={{ display: "flex", alignItems: "stretch", gap: 12, width: "100%" }}>
+  {/* Headshot column */}
+  <div style={{ flex: "0 0 68px", alignSelf: "stretch" }}>
+    {photo ? (
+      <img
+        src={photo}
+        alt={fullName || "Headshot"}
+        style={{
+          width: 68,
+          height: "100%",          // ✅ matches the text block height
+          borderRadius: 12,
+          objectFit: "cover",
+          display: "block",
+          border: "2px solid #1d4ed8",
+        }}
+      />
+    ) : (
+      <div
+        title="No headshot on file"
+        style={{
+          width: 68,
+          height: "100%",          // ✅ matches the text block height
+          borderRadius: 12,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontWeight: 800,
+          fontSize: 14,
+          opacity: 0.8,
+          border: "2px solid #1d4ed8",
+        }}
+      >
+        {initials || "—"}
+      </div>
+    )}
+  </div>
 
-        <div style={{ minWidth: 0 }}>
-          <div style={{ fontWeight: 800, marginBottom: 2 }}>Photo ID</div>
+  {/* Text column */}
+  <div style={{ minWidth: 0 }}>
+    <div style={{ fontWeight: 800, marginBottom: 2 }}>Photo ID</div>
 
-          <div style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-            <strong>Name:</strong> {fullName || "—"}
-          </div>
+    <div style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+      <strong>Name:</strong> {fullName || "—"}
+    </div>
+    <div style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+      <strong>TREC:</strong> {trec || "—"}
+    </div>
+    <div style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+      <strong>Email:</strong> {userProfile?.email || "—"}
+    </div>
 
-          <div style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-            <strong>TREC:</strong> {trec || "—"}
-          </div>
-
-          <div style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-            <strong>Email:</strong> {userProfile?.email || "—"}
-          </div>
-        </div>
-      </>
-    );
-  })()}
+    <div className="muted" style={{ marginTop: 4 }}>
+      {cachedAt ? `Cached: ${cachedAt}` : `Loaded: ${new Date().toLocaleString()}`}
+    </div>
+  </div>
 </div>
+
 
 <div className="rowBetween">
 <div className="sectionSubtitle">Scan QR Code</div>

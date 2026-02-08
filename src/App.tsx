@@ -919,274 +919,247 @@ export default function App() {
                   </button>
                 </div>
 
-                {statusMsg ? <div className="status">{statusMsg}</div> : null}
-              </>
-            ) : (
-              <>
-                <div className="sectionTitle">Admin / Instructor</div>
+              {appTab === "student" ? (
+  <>
+    {statusMsg ? <div className="status">{statusMsg}</div> : null}
+  </>
+) : (
+  <>
+    <div className="sectionTitle">Admin / Instructor</div>
 
-                <div className="grid2">
-                  <div>
-                    <label className="label">Course</label>
-                    <select className="input" value={selectedCourse} onChange={(e) => setSelectedCourse(e.target.value)}>
-                      {COURSE_OPTIONS.map((c) => (
-                        <option key={c} value={c}>
-                          {c}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="label">Session Title</label>
-                    <input
-                      className="input"
-                      value={sessionTitle}
-                      onChange={(e) => setSessionTitle(e.target.value)}
-                      placeholder="e.g., Morning Session"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid2">
-                  <div>
-                    <label className="label">Start Time</label>
-                    <input
-                      className="input"
-                      type="datetime-local"
-                      value={sessionStart}
-                      onChange={(e) => setSessionStart(e.target.value)}
-                    />
-                  </div>
-                  <div>
-                    <label className="label">End Time</label>
-                    <input
-                      className="input"
-                      type="datetime-local"
-                      value={sessionEnd}
-                      onChange={(e) => setSessionEnd(e.target.value)}
-                    />
-                  </div>
-                </div>
-
-                <div className="actions">
-                  <button type="button" className="btnPrimary" onClick={createSession}>
-                    Create New Class Session
-                  </button>
-                </div>
-
-                <div className="sectionSubtitle">Roster</div>
-
-                <div className="grid2">
-                  <div>
-                    <label className="label">Upload roster CSV</label>
-                    <input
-                      className="input"
-                      type="file"
-                      accept=".csv,text/csv"
-                      onChange={(e) => {
-                        const f = e.target.files?.[0];
-                        if (f) handleRosterUpload(f);
-                      }}
-                    />
-                    {rosterError ? <div className="status">{rosterError}</div> : null}
-                  </div>
-
-                  <div>
-                    <label className="label">Manual add</label>
-                    <div className="grid3">
-                      <input
-                        className="input"
-                        value={manualStudent.first_name}
-                        onChange={(e) => setManualStudent({ ...manualStudent, first_name: e.target.value })}
-                        placeholder="First"
-                        autoComplete="off"
-                      />
-                      <input
-                        className="input"
-                        value={manualStudent.mi}
-                        onChange={(e) => setManualStudent({ ...manualStudent, mi: e.target.value })}
-                        placeholder="MI"
-                        maxLength={1}
-                        autoComplete="off"
-                      />
-                      <input
-                        className="input"
-                        value={manualStudent.last_name}
-                        onChange={(e) => setManualStudent({ ...manualStudent, last_name: e.target.value })}
-                        placeholder="Last"
-                        autoComplete="off"
-                      />
-                    </div>
-
-                    <div className="grid2" style={{ marginTop: 10 }}>
-                      <input
-                        className="input"
-                        value={manualStudent.trec_license}
-                        onChange={(e) => setManualStudent({ ...manualStudent, trec_license: e.target.value })}
-                        placeholder="TREC License (123456-SA)"
-                        autoComplete="off"
-                      />
-                      <input
-                        className="input"
-                        value={manualStudent.email}
-                        onChange={(e) => setManualStudent({ ...manualStudent, email: e.target.value })}
-                        placeholder="Email (optional)"
-                        autoComplete="off"
-                      />
-                    </div>
-
-                    <div className="actions" style={{ justifyContent: "flex-start" }}>
-                      <button type="button" className="btnOutline" onClick={addManualStudentToRoster}>
-                        Add Student
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                                <div className="sectionSubtitle">Roster Preview</div>
-                <div className="muted">
-                  {rosterRows.length ? `${rosterRows.length} student(s) loaded.` : "No roster loaded yet."}
-                </div>
-
-                {rosterRows.length ? (
-                  <div className="table" style={{ marginTop: 10 }}>
-                    <div
-                      className="tHead"
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns: "56px 2fr 1fr 2fr",
-                        alignItems: "center",
-                        columnGap: 12,
-                      }}
-                    >
-                      <div>Photo</div>
-                      <div>Name</div>
-                      <div>TREC</div>
-                      <div>Email</div>
-                    </div>
-
-                    {rosterRows.map((r, idx) => {
-                      const fullName = `${r.first_name}${r.mi ? ` ${r.mi}.` : ""} ${r.last_name}`.trim();
-                      const licenseKey = (r.trec_license || "").trim();
-                      const photoUrl = rosterPhotoByTrec[licenseKey] || "";
-                      const initials = `${(r.first_name?.[0] || "").toUpperCase()}${(r.last_name?.[0] || "").toUpperCase()}`;
-
-                      return (
-                        <div
-                          className="tRow"
-                          key={idx}
-                          style={{
-                            display: "grid",
-                            gridTemplateColumns: "56px 2fr 1fr 2fr",
-                            alignItems: "center",
-                            columnGap: 12,
-                          }}
-                        >
-                          <div style={{ display: "flex", alignItems: "center" }}>
-                            {photoUrl ? (
-                              <img
-                                src={photoUrl}
-                                alt={fullName}
-                                style={{
-                                  width: 44,
-                                  height: 44,
-                                  borderRadius: 10,
-                                  objectFit: "cover",
-                                  display: "block",
-                                }}
-                              />
-                            ) : (
-                              <div
-                                title="No headshot on file"
-                                style={{
-                                  width: 44,
-                                  height: 44,
-                                  borderRadius: 10,
-                                  display: "flex",
-                                  alignItems: "center",
-                                  justifyContent: "center",
-                                  fontWeight: 700,
-                                  fontSize: 12,
-                                  opacity: 0.7,
-                                  border: "1px solid rgba(0,0,0,0.12)",
-                                }}
-                              >
-                                {initials || "—"}
-                              </div>
-                            )}
-                          </div>
-
-                          <div
-                            title={fullName}
-                            style={{
-                              whiteSpace: "nowrap",
-                              overflow: "hidden",
-                              textOverflow: "ellipsis",
-                            }}
-                          >
-                            {fullName}
-                          </div>
-
-                          <div
-                            title={r.trec_license}
-                            style={{
-                              whiteSpace: "nowrap",
-                              overflow: "hidden",
-                              textOverflow: "ellipsis",
-                            }}
-                          >
-                            {r.trec_license}
-                          </div>
-
-                          <div
-                            title={r.email || ""}
-                            style={{
-                              whiteSpace: "nowrap",
-                              overflow: "hidden",
-                              textOverflow: "ellipsis",
-                            }}
-                          >
-                            {r.email || "—"}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : null}
-
-                                <div className="sectionSubtitle" style={{ marginTop: 18 }}>
-                  Recent Sessions
-                </div>
-
-                <div className="grid1">
-                  <div>
-                    <label className="label">Select a session</label>
-                    <select
-                      className="input"
-                      value={selectedSessionId}
-                      onChange={(e) => setSelectedSessionId(e.target.value)}
-                      disabled={!recentSessions.length}
-                    >
-                      {recentSessions.length ? (
-                        recentSessions.map((s) => (
-                          <option key={s.id} value={s.id}>
-                            {(s.course_name ? `${s.course_name} — ` : "")}
-                            {s.title} — {new Date(s.starts_at).toLocaleString()}
-                          </option>
-                        ))
-                      ) : (
-                        <option value="">No sessions yet.</option>
-                      )}
-                    </select>
-                  </div>
-                </div>
-
-               {statusMsg ? <div className="status">{statusMsg}</div> : null}
-          </>
-        )}
-
-        <footer className="footer">© {new Date().getFullYear()} ClassCheck Pro™</footer>
+    <div className="grid2">
+      <div>
+        <label className="label">Course</label>
+        <select className="input" value={selectedCourse} onChange={(e) => setSelectedCourse(e.target.value)}>
+          {COURSE_OPTIONS.map((c) => (
+            <option key={c} value={c}>
+              {c}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div>
+        <label className="label">Session Title</label>
+        <input
+          className="input"
+          value={sessionTitle}
+          onChange={(e) => setSessionTitle(e.target.value)}
+          placeholder="e.g., Morning Session"
+        />
       </div>
     </div>
-  );
-}
+
+    <div className="grid2">
+      <div>
+        <label className="label">Start Time</label>
+        <input
+          className="input"
+          type="datetime-local"
+          value={sessionStart}
+          onChange={(e) => setSessionStart(e.target.value)}
+        />
+      </div>
+      <div>
+        <label className="label">End Time</label>
+        <input
+          className="input"
+          type="datetime-local"
+          value={sessionEnd}
+          onChange={(e) => setSessionEnd(e.target.value)}
+        />
+      </div>
+    </div>
+
+    <div className="actions">
+      <button type="button" className="btnPrimary" onClick={createSession}>
+        Create New Class Session
+      </button>
+    </div>
+
+    <div className="sectionSubtitle">Roster</div>
+
+    <div className="grid2">
+      <div>
+        <label className="label">Upload roster CSV</label>
+        <input
+          className="input"
+          type="file"
+          accept=".csv,text/csv"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) handleRosterUpload(f);
+          }}
+        />
+        {rosterError ? <div className="status">{rosterError}</div> : null}
+      </div>
+
+      <div>
+        <label className="label">Manual add</label>
+        <div className="grid3">
+          <input
+            className="input"
+            value={manualStudent.first_name}
+            onChange={(e) => setManualStudent({ ...manualStudent, first_name: e.target.value })}
+            placeholder="First"
+            autoComplete="off"
+          />
+          <input
+            className="input"
+            value={manualStudent.mi}
+            onChange={(e) => setManualStudent({ ...manualStudent, mi: e.target.value })}
+            placeholder="MI"
+            maxLength={1}
+            autoComplete="off"
+          />
+          <input
+            className="input"
+            value={manualStudent.last_name}
+            onChange={(e) => setManualStudent({ ...manualStudent, last_name: e.target.value })}
+            placeholder="Last"
+            autoComplete="off"
+          />
+        </div>
+
+        <div className="grid2" style={{ marginTop: 10 }}>
+          <input
+            className="input"
+            value={manualStudent.trec_license}
+            onChange={(e) => setManualStudent({ ...manualStudent, trec_license: e.target.value })}
+            placeholder="TREC License (123456-SA)"
+            autoComplete="off"
+          />
+          <input
+            className="input"
+            value={manualStudent.email}
+            onChange={(e) => setManualStudent({ ...manualStudent, email: e.target.value })}
+            placeholder="Email (optional)"
+            autoComplete="off"
+          />
+        </div>
+
+        <div className="actions" style={{ justifyContent: "flex-start" }}>
+          <button type="button" className="btnOutline" onClick={addManualStudentToRoster}>
+            Add Student
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div className="sectionSubtitle">Roster Preview</div>
+    <div className="muted">{rosterRows.length ? `${rosterRows.length} student(s) loaded.` : "No roster loaded yet."}</div>
+
+    {rosterRows.length ? (
+      <div className="table" style={{ marginTop: 10 }}>
+        <div
+          className="tHead"
+          style={{
+            display: "grid",
+            gridTemplateColumns: "56px 2fr 1fr 2fr",
+            alignItems: "center",
+            columnGap: 12,
+          }}
+        >
+          <div>Photo</div>
+          <div>Name</div>
+          <div>TREC</div>
+          <div>Email</div>
+        </div>
+
+        {rosterRows.map((r, idx) => {
+          const fullName = `${r.first_name}${r.mi ? ` ${r.mi}.` : ""} ${r.last_name}`.trim();
+          const licenseKey = (r.trec_license || "").trim();
+          const photoUrl = rosterPhotoByTrec[licenseKey] || "";
+          const initials = `${(r.first_name?.[0] || "").toUpperCase()}${(r.last_name?.[0] || "").toUpperCase()}`;
+
+          return (
+            <div
+              className="tRow"
+              key={idx}
+              style={{
+                display: "grid",
+                gridTemplateColumns: "56px 2fr 1fr 2fr",
+                alignItems: "center",
+                columnGap: 12,
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center" }}>
+                {photoUrl ? (
+                  <img
+                    src={photoUrl}
+                    alt={fullName}
+                    style={{
+                      width: 44,
+                      height: 44,
+                      borderRadius: 10,
+                      objectFit: "cover",
+                      display: "block",
+                    }}
+                  />
+                ) : (
+                  <div
+                    title="No headshot on file"
+                    style={{
+                      width: 44,
+                      height: 44,
+                      borderRadius: 10,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontWeight: 700,
+                      fontSize: 12,
+                      opacity: 0.7,
+                      border: "1px solid rgba(0,0,0,0.12)",
+                    }}
+                  >
+                    {initials || "—"}
+                  </div>
+                )}
+              </div>
+
+              <div title={fullName} style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                {fullName}
+              </div>
+
+              <div title={r.trec_license} style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                {r.trec_license}
+              </div>
+
+              <div title={r.email || ""} style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                {r.email || "—"}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    ) : null}
+
+    <div className="sectionSubtitle" style={{ marginTop: 18 }}>
+      Recent Sessions
+    </div>
+
+    <div className="grid1">
+      <div>
+        <label className="label">Select a session</label>
+        <select
+          className="input"
+          value={selectedSessionId}
+          onChange={(e) => setSelectedSessionId(e.target.value)}
+          disabled={!recentSessions.length}
+        >
+          {recentSessions.length ? (
+            recentSessions.map((s) => (
+              <option key={s.id} value={s.id}>
+                {(s.course_name ? `${s.course_name} — ` : "")}
+                {s.title} — {new Date(s.starts_at).toLocaleString()}
+              </option>
+            ))
+          ) : (
+            <option value="">No sessions yet.</option>
+          )}
+        </select>
+      </div>
+    </div>
+
+    {statusMsg ? <div className="status">{statusMsg}</div> : null}
+  </>
+)}

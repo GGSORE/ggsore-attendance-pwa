@@ -1068,136 +1068,130 @@ Add Student
 </div>
 
 {rosterRows.map((r, idx) => {
-const fullName = `${r.first_name}${r.mi ? ` ${r.mi}.` : ""} ${r.last_name}`.trim();
-const licenseKey = (r.trec_license || "").trim();
-const photoUrl = rosterPhotoByTrec[licenseKey] || "";
-const initials = `${(r.first_name?.[0] || "").toUpperCase()}${(r.last_name?.[0] || "").toUpperCase()}`;
+  const fullName = `${r.first_name}${r.mi ? ` ${r.mi}.` : ""} ${r.last_name}`.trim();
+  const licenseKey = (r.trec_license || "").trim();
+  const photoUrl = rosterPhotoByTrec[licenseKey] || "";
+  const initials = `${(r.first_name?.[0] || "").toUpperCase()}${(r.last_name?.[0] || "").toUpperCase()}`;
 
-return (
-/* ✅ ALSO REPLACE your existing tRow wrapper (the one with gridTemplateColumns: "56px 2fr 1fr 2fr")
-   with THIS matching 5-column version.
-   IMPORTANT: this is ONLY the opening <div className="tRow" ...> part — keep the inside the same for now. */
+  return (
+    <div
+      className="tRow"
+      key={idx}
+      style={{
+        display: "grid",
+        gridTemplateColumns: "56px 2fr 1fr 2fr 220px",
+        alignItems: "center",
+        columnGap: 12,
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center" }}>
+        {photoUrl ? (
+          <img
+            src={photoUrl}
+            alt={fullName}
+            style={{
+              width: 44,
+              height: 44,
+              borderRadius: 10,
+              objectFit: "cover",
+              display: "block",
+            }}
+          />
+        ) : (
+          <div
+            title="No headshot on file"
+            style={{
+              width: 44,
+              height: 44,
+              borderRadius: 10,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontWeight: 700,
+              fontSize: 12,
+              opacity: 0.7,
+              border: "1px solid rgba(0,0,0,0.12)",
+            }}
+          >
+            {initials || "—"}
+          </div>
+        )}
+      </div>
 
-<div
-  className="tRow"
-  key={idx}
-  style={{
-    display: "grid",
-    gridTemplateColumns: "56px 2fr 1fr 2fr 220px",
-    alignItems: "center",
-    columnGap: 12,
-  }}
->
+      <div
+        title={fullName}
+        style={{
+          whiteSpace: "nowrap",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+        }}
+      >
+        {fullName}
+      </div>
 
->
-<div style={{ display: "flex", alignItems: "center" }}>
-{photoUrl ? (
-<img
-src={photoUrl}
-alt={fullName}
-style={{
-width: 44,
-height: 44,
-borderRadius: 10,
-objectFit: "cover",
-display: "block",
-}}
-/>
-) : (
-<div
-title="No headshot on file"
-style={{
-width: 44,
-height: 44,
-borderRadius: 10,
-display: "flex",
-alignItems: "center",
-justifyContent: "center",
-fontWeight: 700,
-fontSize: 12,
-opacity: 0.7,
-border: "1px solid rgba(0,0,0,0.12)",
-}}
->
-{initials || "—"}
-</div>
-)}
-</div>
+      <div
+        title={r.trec_license}
+        style={{
+          whiteSpace: "nowrap",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+        }}
+      >
+        {r.trec_license}
+      </div>
 
-<div
-title={fullName}
-style={{
-whiteSpace: "nowrap",
-overflow: "hidden",
-textOverflow: "ellipsis",
-}}
->
-{fullName}
-</div>
+      <div
+        title={r.email || ""}
+        style={{
+          whiteSpace: "nowrap",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+        }}
+      >
+        {r.email || "—"}
+      </div>
 
-<div
-title={r.trec_license}
-style={{
-whiteSpace: "nowrap",
-overflow: "hidden",
-textOverflow: "ellipsis",
-}}
->
-{r.trec_license}
-</div>
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
+        <button type="button" className="btnOutline" style={{ padding: "6px 10px" }}>
+          Check In
+        </button>
 
-<div
-title={r.email || ""}
-style={{
-whiteSpace: "nowrap",
-overflow: "hidden",
-textOverflow: "ellipsis",
-}}
->
-{r.email || "—"}
-</div>
-  <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
-  <button type="button" className="btnOutline" style={{ padding: "6px 10px" }}>
-    Check In
-  </button>
+        <button type="button" className="btnOutline" style={{ padding: "6px 10px" }}>
+          Check Out
+        </button>
 
-  <button type="button" className="btnOutline" style={{ padding: "6px 10px" }}>
-    Check Out
-  </button>
+        <button
+          type="button"
+          className="tabBtn small"
+          style={{
+            padding: "6px 10px",
+            borderRadius: 999,
+            lineHeight: 1,
+          }}
+        >
+          No-Show
+        </button>
 
-  <button
-    type="button"
-    className="tabBtn small"
-    style={{
-      padding: "6px 10px",
-      borderRadius: 999,
-      lineHeight: 1,
-    }}
-  >
-    No-Show
-  </button>
+        <button
+          type="button"
+          className="btnOutline"
+          title="Undo / Clear Status"
+          style={{ width: 34, height: 34, padding: 0 }}
+        >
+          ↺
+        </button>
 
-  <button
-    type="button"
-    className="btnOutline"
-    title="Undo / Clear Status"
-    style={{ width: 34, height: 34, padding: 0 }}
-  >
-    ↺
-  </button>
-
-  <button
-    type="button"
-    className="btnOutline"
-    title="Remove from roster"
-    style={{ width: 34, height: 34, padding: 0 }}
-  >
-    🗑
-  </button>
-</div>
-
-</div>
-);
+        <button
+          type="button"
+          className="btnOutline"
+          title="Remove from roster"
+          style={{ width: 34, height: 34, padding: 0 }}
+        >
+          🗑
+        </button>
+      </div>
+    </div>
+  );
 })}
 
 </div>

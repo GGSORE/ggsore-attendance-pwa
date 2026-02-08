@@ -812,90 +812,87 @@ Sign out
 <div className="sectionTitle">Check-In</div>
 {/* Photo ID Card (shows after login) */}
 <div
-className="noteBox"
-style={{
-    marginTop: 12,
+  className="noteBox"
+  style={{
     marginTop: 10,
-display: "flex",
-alignItems: "center",
-gap: 12,
-padding: 12,
+    padding: 12,
 
-    // ✅ subtle 3D card effect
+    // subtle 3D card effect
     background: "#fff",
     borderRadius: 14,
     boxShadow: "0 2px 10px rgba(0,0,0,0.08)",
     border: "1px solid rgba(0,0,0,0.06)",
-}}
+  }}
 >
+  {(() => {
+    const fullName = `${(userProfile?.first_name ?? "").trim()}${
+      userProfile?.middle_initial ? ` ${userProfile.middle_initial}.` : ""
+    } ${(userProfile?.last_name ?? "").trim()}`.trim();
 
-{(() => {
-const fullName = `${(userProfile?.first_name ?? "").trim()}${
-     userProfile?.middle_initial ? ` ${userProfile.middle_initial}.` : ""
-   } ${(userProfile?.last_name ?? "").trim()}`.trim();
+    const trec = (userProfile?.trec_license ?? "").trim();
+    const photo = (userProfile?.photo_url ?? "").trim();
 
-const trec = (userProfile?.trec_license ?? "").trim();
-const photo = (userProfile?.photo_url ?? "").trim();
+    const initials = `${(userProfile?.first_name?.[0] || "").toUpperCase()}${(
+      userProfile?.last_name?.[0] || ""
+    ).toUpperCase()}`.trim();
 
-const initials = `${(userProfile?.first_name?.[0] || "").toUpperCase()}${(
-     userProfile?.last_name?.[0] || ""
-   ).toUpperCase()}`.trim();
+    return (
+      <div style={{ display: "flex", alignItems: "stretch", gap: 12, width: "100%" }}>
+        <div style={{ flex: "0 0 72px", alignSelf: "stretch" }}>
+          {photo ? (
+            <img
+              src={photo}
+              alt={fullName || "Headshot"}
+              style={{
+                width: 72,
+                height: "100%",
+                borderRadius: 12,
+                objectFit: "cover",
+                display: "block",
+                border: "2px solid #1d4ed8",
+              }}
+            />
+          ) : (
+            <div
+              title="No headshot on file"
+              style={{
+                width: 72,
+                height: "100%",
+                borderRadius: 12,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontWeight: 800,
+                fontSize: 14,
+                opacity: 0.8,
+                border: "2px solid #1d4ed8",
+              }}
+            >
+              {initials || "—"}
+            </div>
+          )}
+        </div>
 
-return (
-<>
-<div style={{ flex: "0 0 auto" }}>
-{photo ? (
-<img
-src={photo}
-alt={fullName || "Headshot"}
-style={{
-width: 56,
-height: 56,
-borderRadius: 12,
-objectFit: "cover",
-display: "block",
-}}
-/>
-) : (
-<div
-title="No headshot on file"
-style={{
-width: 56,
-height: 56,
-borderRadius: 12,
-display: "flex",
-alignItems: "center",
-justifyContent: "center",
-fontWeight: 800,
-fontSize: 14,
-opacity: 0.8,
-border: "1px solid rgba(0,0,0,0.12)",
-}}
->
-{initials || "—"}
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontWeight: 800, marginBottom: 2 }}>Photo ID</div>
+
+          <div style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+            <strong>Name:</strong> {fullName || "—"}
+          </div>
+
+          <div style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+            <strong>TREC:</strong> {trec || "—"}
+          </div>
+
+          <div style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+            <strong>Email:</strong> {userProfile?.email || "—"}
+          </div>
+        </div>
+      </div>
+    );
+  })()}
 </div>
-)}
-</div>
 
-<div style={{ minWidth: 0 }}>
-<div style={{ fontWeight: 800, marginBottom: 2 }}>Photo ID</div>
-
-<div style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-<strong>Name:</strong> {fullName || "—"}
-</div>
-
-<div style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-<strong>TREC:</strong> {trec || "—"}
-</div>
-
-<div style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-<strong>Email:</strong> {userProfile?.email || "—"}
-</div>
-</div>
-</>
-);
-})()}
-</div>
 
 <div className="rowBetween">
 <div className="sectionSubtitle">Scan QR Code</div>

@@ -1269,17 +1269,22 @@ Create New Class Session
   border: "2px solid #8B0000",
   background: "rgba(139,0,0,0.06)",
 
-  // ✅ this keeps the RIGHT edge where it is
+  // ✅ force the width to obey (beats min-width / flex rules)
+  width: 88,
+  minWidth: 88,
+  maxWidth: 88,
+  flex: "0 0 88px",
+  boxSizing: "border-box",
+
+  // ✅ keep right edge exactly where it is
   marginLeft: "auto",
 
-  // ✅ shrink width to pull LEFT edge rightward
-  width: 88,          // try 88, 92, 96, 100 until it lines up perfectly
-
-  // ✅ keep text centered inside
-  display: "flex",
+  // ✅ keep the label centered
+  display: "inline-flex",
   justifyContent: "center",
   alignItems: "center",
 }}
+
 
               onClick={() => {
                 const ts = new Date().toLocaleString();

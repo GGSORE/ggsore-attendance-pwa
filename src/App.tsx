@@ -1273,7 +1273,7 @@ Create New Class Session
   marginLeft: "auto",
 
   // ✅ shrink width to pull LEFT edge rightward
-  width: 96,          // try 88, 92, 96, 100 until it lines up perfectly
+  width: 88,          // try 88, 92, 96, 100 until it lines up perfectly
 
   // ✅ keep text centered inside
   display: "flex",

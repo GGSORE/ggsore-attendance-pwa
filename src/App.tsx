@@ -697,7 +697,7 @@ export default function App() {
                   <strong>Important:</strong> Enter your name exactly as it appears on your TREC license, including middle
                   initial.
                   <br />
-                  For the TREC license number, be sure to include the appropriate suffix: -SA, -B, or -BB.
+                  For the TREC license number, be sure to include the appropriate suffix: -SA or -B.
                 </div>
 
                 <div className="grid3">

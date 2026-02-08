@@ -814,13 +814,16 @@ Sign out
 <div
   className="noteBox"
   style={{
-    marginTop: 10,
-    padding: 12,
+    marginTop: 12,
+    display: "flex",
+    alignItems: "center",
+    gap: 14,
+    padding: 14,
 
     // subtle 3D card effect
     background: "#fff",
     borderRadius: 14,
-    boxShadow: "0 2px 10px rgba(0,0,0,0.08)",
+    boxShadow: "0 4px 14px rgba(0,0,0,0.10)",
     border: "1px solid rgba(0,0,0,0.06)",
   }}
 >
@@ -837,35 +840,36 @@ Sign out
     ).toUpperCase()}`.trim();
 
     return (
-      <div style={{ display: "flex", alignItems: "stretch", gap: 12, width: "100%" }}>
-        <div style={{ flex: "0 0 72px", alignSelf: "stretch" }}>
+      <>
+        <div style={{ flex: "0 0 76px", alignSelf: "center" }}>
           {photo ? (
             <img
               src={photo}
               alt={fullName || "Headshot"}
               style={{
-                width: 72,
-                height: "100%",
-                borderRadius: 12,
+                width: 76,
+                height: 96,
+                borderRadius: 14,
+                border: "2px solid rgba(29,78,216,0.85)",
                 objectFit: "cover",
                 display: "block",
-                border: "2px solid #1d4ed8",
               }}
             />
           ) : (
             <div
               title="No headshot on file"
               style={{
-                width: 72,
-                height: "100%",
-                borderRadius: 12,
+                width: 76,
+                height: 96,
+                borderRadius: 14,
+                border: "2px solid rgba(29,78,216,0.45)",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
                 fontWeight: 800,
-                fontSize: 14,
+                fontSize: 16,
                 opacity: 0.8,
-                border: "2px solid #1d4ed8",
+                background: "rgba(29,78,216,0.06)",
               }}
             >
               {initials || "—"}
@@ -888,11 +892,10 @@ Sign out
             <strong>Email:</strong> {userProfile?.email || "—"}
           </div>
         </div>
-      </div>
+      </>
     );
   })()}
 </div>
-
 
 <div className="rowBetween">
 <div className="sectionSubtitle">Scan QR Code</div>

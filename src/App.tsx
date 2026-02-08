@@ -814,13 +814,20 @@ Sign out
 <div
   className="noteBox"
   style={{
-    marginTop: 12,
+    marginTop: 10,
     display: "flex",
     alignItems: "center",
     gap: 12,
     padding: 12,
+
+    // ✅ subtle 3D card effect
+    background: "#fff",
+    borderRadius: 14,
+    boxShadow: "0 2px 10px rgba(0,0,0,0.08)",
+    border: "1px solid rgba(0,0,0,0.06)",
   }}
 >
+
   {(() => {
     const fullName = `${(userProfile?.first_name ?? "").trim()}${
       userProfile?.middle_initial ? ` ${userProfile.middle_initial}.` : ""

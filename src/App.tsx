@@ -1169,7 +1169,7 @@ Create New Class Session
             )}
           </div>
 
-{/* Name + Email (2 lines, single-line each, no wrap) */}
+{/* Name + Email + Quick Note (3 lines, single-line each, no wrap) */}
 <div style={{ minWidth: 0 }}>
   <div
     title={fullName}
@@ -1188,7 +1188,7 @@ Create New Class Session
     style={{
       marginTop: 2,
       fontSize: 12,
-      opacity: 0.85,
+      opacity: 0.9,
       whiteSpace: "nowrap",
       overflow: "hidden",
       textOverflow: "ellipsis",
@@ -1196,7 +1196,22 @@ Create New Class Session
   >
     {r.email || "—"}
   </div>
+
+  <div
+    title="Quick note"
+    style={{
+      marginTop: 2,
+      fontSize: 12,
+      opacity: 0.75,
+      whiteSpace: "nowrap",
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+    }}
+  >
+    Note: —
+  </div>
 </div>
+
 
 
           {/* TREC */}

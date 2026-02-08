@@ -1038,7 +1038,7 @@ export default function App() {
                   </div>
                 </div>
 
-                <div className="sectionSubtitle">Roster Preview</div>
+                                <div className="sectionSubtitle">Roster Preview</div>
                 <div className="muted">
                   {rosterRows.length ? `${rosterRows.length} student(s) loaded.` : "No roster loaded yet."}
                 </div>
@@ -1146,10 +1146,8 @@ export default function App() {
                         </div>
                       );
                     })}
-
                   </div>
                 ) : null}
-
 
                                <div className="sectionSubtitle" style={{ marginTop: 18 }}>
                   Recent Sessions

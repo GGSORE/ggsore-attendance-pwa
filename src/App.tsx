@@ -336,6 +336,7 @@ export default function App() {
       setMiddleInitial("");
       setLastName("");
       setTrecLicense("");
+      setHeadshotFile(null);
       setQrValue("");
       stopScan();
       setView("auth");

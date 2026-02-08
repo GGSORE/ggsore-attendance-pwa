@@ -124,7 +124,7 @@ export default function App() {
   const [password, setPassword] = useState<string>("");
 
     // create account fields
-  const [firstName, setFirstName] = useState<string>("");
+    const [firstName, setFirstName] = useState<string>("");
   const [middleInitial, setMiddleInitial] = useState<string>("");
   const [lastName, setLastName] = useState<string>("");
   const [trecLicense, setTrecLicense] = useState<string>("");
@@ -263,19 +263,50 @@ export default function App() {
         return;
       }
 
+      const cleanLicense = trecLicense.trim();
+
       const { data, error } = await supabase.auth.signUp({ email, password });
       if (error) throw error;
 
+      let photoUrl: string | null = null;
+
+      // Upload headshot (optional)
+      if (data.user?.id && headshotFile) {
+        try {
+          const name = headshotFile.name || "headshot";
+          const ext = (name.split(".").pop() || "jpg").toLowerCase();
+          const safeExt = ext === "png" || ext === "jpg" || ext === "jpeg" || ext === "webp" ? ext : "jpg";
+
+          // Store under: headshots/<trec_license>/headshot.<ext>
+          const filePath = `${cleanLicense}/headshot.${safeExt}`;
+
+          const { error: upErr } = await supabase.storage.from("headshots").upload(filePath, headshotFile, {
+            upsert: true,
+            contentType: headshotFile.type || "image/jpeg",
+          });
+
+          if (!upErr) {
+            const { data: pub } = supabase.storage.from("headshots").getPublicUrl(filePath);
+            photoUrl = pub?.publicUrl ?? null;
+          }
+        } catch {
+          // ignore upload errors; account still creates
+        }
+      }
+
       // Best-effort profile upsert (non-fatal)
       try {
-        await supabase.from("gg_profiles").upsert({
-          id: data.user?.id,
-          email,
-          first_name: firstName,
-          middle_initial: middleInitial || null,
-          last_name: lastName,
-          trec_license: trecLicense,
-        });
+        if (data.user?.id) {
+          await supabase.from("gg_profiles").upsert({
+            id: data.user.id,
+            email,
+            first_name: firstName,
+            middle_initial: middleInitial || null,
+            last_name: lastName,
+            trec_license: cleanLicense,
+            photo_url: photoUrl, // ✅ save the URL
+          });
+        }
       } catch {
         // ignore
       }
@@ -286,10 +317,12 @@ export default function App() {
       setView("app");
       setAppTab("student");
       setPassword("");
+      setHeadshotFile(null);
     } catch (e: any) {
       setStatusMsg(e?.message ?? "Account creation failed.");
     }
   }
+
 
   async function onSignOut() {
     setStatusMsg("");

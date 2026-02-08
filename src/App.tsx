@@ -1013,6 +1013,75 @@ onChange={(e) => setSessionEnd(e.target.value)}
 Create New Class Session
 </button>
 </div>
+<div className="sectionSubtitle">Roster</div>
+
+<div className="grid2">
+  <div>
+    <label className="label">Upload roster CSV</label>
+    <input
+      className="input"
+      type="file"
+      accept=".csv,text/csv"
+      onChange={(e) => {
+        const f = e.target.files?.[0];
+        if (f) handleRosterUpload(f);
+      }}
+    />
+    {rosterError ? <div className="status">{rosterError}</div> : null}
+  </div>
+
+  <div>
+    <label className="label">Manual add</label>
+
+    <div className="grid3">
+      <input
+        className="input"
+        value={manualStudent.first_name}
+        onChange={(e) => setManualStudent({ ...manualStudent, first_name: e.target.value })}
+        placeholder="First"
+        autoComplete="off"
+      />
+      <input
+        className="input"
+        value={manualStudent.mi}
+        onChange={(e) => setManualStudent({ ...manualStudent, mi: e.target.value })}
+        placeholder="MI"
+        maxLength={1}
+        autoComplete="off"
+      />
+      <input
+        className="input"
+        value={manualStudent.last_name}
+        onChange={(e) => setManualStudent({ ...manualStudent, last_name: e.target.value })}
+        placeholder="Last"
+        autoComplete="off"
+      />
+    </div>
+
+    <div className="grid2" style={{ marginTop: 10 }}>
+      <input
+        className="input"
+        value={manualStudent.trec_license}
+        onChange={(e) => setManualStudent({ ...manualStudent, trec_license: e.target.value })}
+        placeholder="TREC License (123456-SA)"
+        autoComplete="off"
+      />
+      <input
+        className="input"
+        value={manualStudent.email}
+        onChange={(e) => setManualStudent({ ...manualStudent, email: e.target.value })}
+        placeholder="Email (optional)"
+        autoComplete="off"
+      />
+    </div>
+
+    <div className="actions" style={{ justifyContent: "flex-start" }}>
+      <button type="button" className="btnOutline" onClick={addManualStudentToRoster}>
+        Add Student
+      </button>
+    </div>
+  </div>
+</div>
 
 <div className="sectionSubtitle">Roster Preview</div>
 <div className="muted">
@@ -1259,7 +1328,23 @@ Create New Class Session
 </>
 )}
 
-<footer className="footer">© {new Date().getFullYear()} ClassCheck Pro™</footer>
+<footer className="footer">
+  <div style={{ fontWeight: 800 }}>
+    © {new Date().getFullYear()}{" "}
+    <span>
+      ClassCheck Pro
+      <span style={{ fontSize: "0.7em", verticalAlign: "super" }}>™</span>
+    </span>
+    . All rights reserved.
+  </div>
+
+  <div className="muted" style={{ marginTop: 6, lineHeight: 1.35 }}>
+    <span style={{ fontWeight: 700 }}>Instructor/Admin Notice:</span> Manual roster actions are
+    administrative tools only and must be used in accordance with course policies and applicable
+    rules.
+  </div>
+</footer>
+
 </div>
 </div>
 );

@@ -774,7 +774,12 @@ export default function App() {
               </>
             )}
 
+            {statusMsg ? <div className="status">{statusMsg}</div> : null}
+          </>
+        ) : (
+          <>
             <div className="topRow">
+
               <div>
                 <div className="welcome">{welcomeName()}</div>
                 <div className="muted">{userProfile?.email}</div>
@@ -1176,6 +1181,12 @@ export default function App() {
                   </div>
                 </div>
 
-                {statusMsg ? <div className="status">{statusMsg}</div> : null}
-                       )}
+               {statusMsg ? <div className="status">{statusMsg}</div> : null}
+          </>
         )}
+
+        <footer className="footer">© {new Date().getFullYear()} ClassCheck Pro™</footer>
+      </div>
+    </div>
+  );
+}

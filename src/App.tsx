@@ -1177,7 +1177,5 @@ export default function App() {
                 </div>
 
                 {statusMsg ? <div className="status">{statusMsg}</div> : null}
-              </>
-            )}
-          </>
+                       )}
         )}

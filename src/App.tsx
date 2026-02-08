@@ -728,75 +728,7 @@ placeholder="••••••••"
 Login
 </button>
 </div>
-  <div className="sectionSubtitle">Roster</div>
-
-<div className="grid2">
-  <div>
-    <label className="label">Upload roster CSV</label>
-    <input
-      className="input"
-      type="file"
-      accept=".csv,text/csv"
-      onChange={(e) => {
-        const f = e.target.files?.[0];
-        if (f) handleRosterUpload(f);
-      }}
-    />
-    {rosterError ? <div className="status">{rosterError}</div> : null}
-  </div>
-
-  <div>
-    <label className="label">Manual add</label>
-
-    <div className="grid3">
-      <input
-        className="input"
-        value={manualStudent.first_name}
-        onChange={(e) => setManualStudent({ ...manualStudent, first_name: e.target.value })}
-        placeholder="First"
-        autoComplete="off"
-      />
-      <input
-        className="input"
-        value={manualStudent.mi}
-        onChange={(e) => setManualStudent({ ...manualStudent, mi: e.target.value })}
-        placeholder="MI"
-        maxLength={1}
-        autoComplete="off"
-      />
-      <input
-        className="input"
-        value={manualStudent.last_name}
-        onChange={(e) => setManualStudent({ ...manualStudent, last_name: e.target.value })}
-        placeholder="Last"
-        autoComplete="off"
-      />
-    </div>
-
-    <div className="grid2" style={{ marginTop: 10 }}>
-      <input
-        className="input"
-        value={manualStudent.trec_license}
-        onChange={(e) => setManualStudent({ ...manualStudent, trec_license: e.target.value })}
-        placeholder="TREC License (123456-SA)"
-        autoComplete="off"
-      />
-      <input
-        className="input"
-        value={manualStudent.email}
-        onChange={(e) => setManualStudent({ ...manualStudent, email: e.target.value })}
-        placeholder="Email (optional)"
-        autoComplete="off"
-      />
-    </div>
-
-    <div className="actions" style={{ justifyContent: "flex-start" }}>
-      <button type="button" className="btnOutline" onClick={addManualStudentToRoster}>
-        Add Student
-      </button>
-    </div>
-  </div>
-</div>
+  
 
 ) : (
 <>

@@ -1258,3 +1258,7 @@ Create New Class Session
 )}
 
 <footer className="footer">© {new Date().getFullYear()} ClassCheck Pro™</footer>
+</div>
+</div>
+);
+}

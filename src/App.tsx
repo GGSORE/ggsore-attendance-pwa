@@ -1156,6 +1156,45 @@ Add Student
   const photoUrl = rosterPhotoByTrec[licenseKey] || "";
   const initials = `${(r.first_name?.[0] || "").toUpperCase()}${(r.last_name?.[0] || "").toUpperCase()}`;
 
+  const checkedIn = !!r.checked_in_at;
+  const checkedOut = !!r.checked_out_at;
+  const noShow = !!r.no_show;
+
+  const updateRow = (patch: Partial<RosterRow>) => {
+    const next = rosterRows.map((x, i) => (i === idx ? { ...x, ...patch } : x));
+    persistRoster(next);
+  };
+
+  const onCheckIn = () => {
+    updateRow({ checked_in_at: new Date().toISOString(), no_show: false });
+    setStatusMsg(`✅ Checked in: ${fullName}`);
+  };
+
+  const onCheckOut = () => {
+    updateRow({ checked_out_at: new Date().toISOString(), no_show: false });
+    setStatusMsg(`✅ Checked out: ${fullName}`);
+  };
+
+  const onToggleNoShow = () => {
+    updateRow({
+      no_show: !noShow,
+      checked_in_at: null,
+      checked_out_at: null,
+    });
+    setStatusMsg(!noShow ? `🟡 Marked no-show: ${fullName}` : `↺ Cleared no-show: ${fullName}`);
+  };
+
+  const onUndo = () => {
+    updateRow({ checked_in_at: null, checked_out_at: null, no_show: false });
+    setStatusMsg(`↺ Cleared status: ${fullName}`);
+  };
+
+  const onRemove = () => {
+    const next = rosterRows.filter((_, i) => i !== idx);
+    persistRoster(next);
+    setStatusMsg(`🗑 Removed from roster: ${fullName}`);
+  };
+
   return (
     <div
       className="tRow"
@@ -1163,11 +1202,13 @@ Add Student
       style={{
         display: "grid",
         gridTemplateColumns: "56px 2fr 1fr 2fr 220px",
-        alignItems: "center",
         columnGap: 12,
+        alignItems: "start",
+        padding: "12px 12px",
       }}
     >
-      <div style={{ display: "flex", alignItems: "center" }}>
+      {/* Photo */}
+      <div style={{ display: "flex", alignItems: "flex-start" }}>
         {photoUrl ? (
           <img
             src={photoUrl}
@@ -1178,6 +1219,7 @@ Add Student
               borderRadius: 10,
               objectFit: "cover",
               display: "block",
+              border: "2px solid #1e3a8a",
             }}
           />
         ) : (
@@ -1201,45 +1243,56 @@ Add Student
         )}
       </div>
 
-      <div
-        title={fullName}
-        style={{
-          whiteSpace: "nowrap",
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-        }}
-      >
-        {fullName}
+      {/* Name + Email (2-deck) */}
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontWeight: 800, lineHeight: 1.2, whiteSpace: "normal", wordBreak: "break-word" }}>
+          {fullName}
+        </div>
+        <div className="muted" style={{ marginTop: 4, whiteSpace: "normal", wordBreak: "break-word" }}>
+          {r.email || "—"}
+        </div>
+
+        {/* tiny status line */}
+        <div className="muted" style={{ marginTop: 6, fontSize: 12 }}>
+          {noShow
+            ? "Status: No-show"
+            : checkedOut
+            ? "Status: Checked out"
+            : checkedIn
+            ? "Status: Checked in"
+            : "Status: —"}
+        </div>
       </div>
 
-      <div
-        title={r.trec_license}
-        style={{
-          whiteSpace: "nowrap",
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-        }}
-      >
+      {/* TREC */}
+      <div style={{ whiteSpace: "normal", wordBreak: "break-word", lineHeight: 1.2 }}>
         {r.trec_license}
       </div>
 
-      <div
-        title={r.email || ""}
-        style={{
-          whiteSpace: "nowrap",
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-        }}
-      >
+      {/* Email (full) */}
+      <div style={{ whiteSpace: "normal", wordBreak: "break-word", lineHeight: 1.2 }}>
         {r.email || "—"}
       </div>
 
+      {/* Actions */}
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
-        <button type="button" className="btnOutline" style={{ padding: "6px 10px" }}>
+        <button
+          type="button"
+          className="btnOutline"
+          style={{ padding: "6px 10px", opacity: checkedIn || noShow ? 0.55 : 1 }}
+          onClick={onCheckIn}
+          disabled={checkedIn || noShow}
+        >
           Check In
         </button>
 
-        <button type="button" className="btnOutline" style={{ padding: "6px 10px" }}>
+        <button
+          type="button"
+          className="btnOutline"
+          style={{ padding: "6px 10px", opacity: checkedOut || noShow ? 0.55 : 1 }}
+          onClick={onCheckOut}
+          disabled={checkedOut || noShow}
+        >
           Check Out
         </button>
 
@@ -1250,7 +1303,9 @@ Add Student
             padding: "6px 10px",
             borderRadius: 999,
             lineHeight: 1,
+            opacity: noShow ? 1 : 0.85,
           }}
+          onClick={onToggleNoShow}
         >
           No-Show
         </button>
@@ -1260,6 +1315,7 @@ Add Student
           className="btnOutline"
           title="Undo / Clear Status"
           style={{ width: 34, height: 34, padding: 0 }}
+          onClick={onUndo}
         >
           ↺
         </button>
@@ -1269,6 +1325,7 @@ Add Student
           className="btnOutline"
           title="Remove from roster"
           style={{ width: 34, height: 34, padding: 0 }}
+          onClick={onRemove}
         >
           🗑
         </button>
@@ -1276,6 +1333,7 @@ Add Student
     </div>
   );
 })}
+
 
 </div>
 ) : null}

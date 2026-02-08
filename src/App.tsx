@@ -175,6 +175,16 @@ trec_license: "",
 email: "",
 });
 const [rosterPhotoByTrec, setRosterPhotoByTrec] = useState<Record<string, string>>({});
+const [rosterActionsByTrec, setRosterActionsByTrec] = useState<
+  Record<
+    string,
+    {
+      checkInAt?: string;
+      checkOutAt?: string;
+      noShowAt?: string;
+    }
+  >
+>({});
 
 const isAdmin = useMemo(() => {
 const e = safeLower(userProfile?.email);
@@ -1143,10 +1153,22 @@ Add Student
     fontWeight: 800,
   }}
 >
+<div
+  className="tHead"
+  style={{
+    display: "grid",
+    gridTemplateColumns: "56px 2.6fr 1.1fr 1.7fr 240px",
+    alignItems: "center",
+    columnGap: 12,
+    background: "rgba(45, 120, 255, 0.10)", // light blue header
+    borderRadius: 10,
+    padding: "10px 12px",
+  }}
+>
   <div>Photo</div>
   <div>Name (Email)</div>
   <div>TREC</div>
-  <div>Email</div>
+  <div>Status</div>
   <div style={{ textAlign: "right" }}>Actions</div>
 </div>
 
@@ -1156,44 +1178,10 @@ Add Student
   const photoUrl = rosterPhotoByTrec[licenseKey] || "";
   const initials = `${(r.first_name?.[0] || "").toUpperCase()}${(r.last_name?.[0] || "").toUpperCase()}`;
 
-  const checkedIn = !!r.checked_in_at;
-  const checkedOut = !!r.checked_out_at;
-  const noShow = !!r.no_show;
-
-  const updateRow = (patch: Partial<RosterRow>) => {
-    const next = rosterRows.map((x, i) => (i === idx ? { ...x, ...patch } : x));
-    persistRoster(next);
-  };
-
-  const onCheckIn = () => {
-    updateRow({ checked_in_at: new Date().toISOString(), no_show: false });
-    setStatusMsg(`✅ Checked in: ${fullName}`);
-  };
-
-  const onCheckOut = () => {
-    updateRow({ checked_out_at: new Date().toISOString(), no_show: false });
-    setStatusMsg(`✅ Checked out: ${fullName}`);
-  };
-
-  const onToggleNoShow = () => {
-    updateRow({
-      no_show: !noShow,
-      checked_in_at: null,
-      checked_out_at: null,
-    });
-    setStatusMsg(!noShow ? `🟡 Marked no-show: ${fullName}` : `↺ Cleared no-show: ${fullName}`);
-  };
-
-  const onUndo = () => {
-    updateRow({ checked_in_at: null, checked_out_at: null, no_show: false });
-    setStatusMsg(`↺ Cleared status: ${fullName}`);
-  };
-
-  const onRemove = () => {
-    const next = rosterRows.filter((_, i) => i !== idx);
-    persistRoster(next);
-    setStatusMsg(`🗑 Removed from roster: ${fullName}`);
-  };
+  const actions = rosterActionsByTrec[licenseKey] || {};
+  const checkInAt = actions.checkInAt || "";
+  const checkOutAt = actions.checkOutAt || "";
+  const noShowAt = actions.noShowAt || "";
 
   return (
     <div
@@ -1201,14 +1189,14 @@ Add Student
       key={idx}
       style={{
         display: "grid",
-        gridTemplateColumns: "56px 2fr 1fr 2fr 220px",
+        gridTemplateColumns: "56px 2.6fr 1.1fr 1.7fr 240px",
+        alignItems: "center",
         columnGap: 12,
-        alignItems: "start",
-        padding: "12px 12px",
+        padding: "10px 12px",
       }}
     >
       {/* Photo */}
-      <div style={{ display: "flex", alignItems: "flex-start" }}>
+      <div style={{ display: "flex", alignItems: "center" }}>
         {photoUrl ? (
           <img
             src={photoUrl}
@@ -1219,7 +1207,6 @@ Add Student
               borderRadius: 10,
               objectFit: "cover",
               display: "block",
-              border: "2px solid #1e3a8a",
             }}
           />
         ) : (
@@ -1243,35 +1230,59 @@ Add Student
         )}
       </div>
 
-      {/* Name + Email (2-deck) */}
+      {/* Name + Email (stacked, single-line each, no wrap) */}
       <div style={{ minWidth: 0 }}>
-        <div style={{ fontWeight: 800, lineHeight: 1.2, whiteSpace: "normal", wordBreak: "break-word" }}>
-          {fullName}
-        </div>
-        <div className="muted" style={{ marginTop: 4, whiteSpace: "normal", wordBreak: "break-word" }}>
-          {r.email || "—"}
+        <div
+          title={fullName}
+          style={{
+            fontWeight: 800,
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+          }}
+        >
+          {fullName || "—"}
         </div>
 
-        {/* tiny status line */}
-        <div className="muted" style={{ marginTop: 6, fontSize: 12 }}>
-          {noShow
-            ? "Status: No-show"
-            : checkedOut
-            ? "Status: Checked out"
-            : checkedIn
-            ? "Status: Checked in"
-            : "Status: —"}
+        <div
+          title={r.email || ""}
+          style={{
+            marginTop: 2,
+            fontSize: 12,
+            opacity: 0.85,
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+          }}
+        >
+          {r.email || "—"}
         </div>
       </div>
 
-      {/* TREC */}
-      <div style={{ whiteSpace: "normal", wordBreak: "break-word", lineHeight: 1.2 }}>
+      {/* License (to the right of name) */}
+      <div
+        title={r.trec_license}
+        style={{
+          whiteSpace: "nowrap",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          fontWeight: 700,
+        }}
+      >
         {r.trec_license}
       </div>
 
-      {/* Email (full) */}
-      <div style={{ whiteSpace: "normal", wordBreak: "break-word", lineHeight: 1.2 }}>
-        {r.email || "—"}
+      {/* Status with timestamps (check-in stays even after check-out) */}
+      <div style={{ minWidth: 0, fontSize: 12, lineHeight: 1.25 }}>
+        <div style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+          <strong>In:</strong> {checkInAt || "—"}
+        </div>
+        <div style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+          <strong>Out:</strong> {checkOutAt || "—"}
+        </div>
+        <div style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+          <strong>No-Show:</strong> {noShowAt || "—"}
+        </div>
       </div>
 
       {/* Actions */}
@@ -1279,9 +1290,15 @@ Add Student
         <button
           type="button"
           className="btnOutline"
-          style={{ padding: "6px 10px", opacity: checkedIn || noShow ? 0.55 : 1 }}
-          onClick={onCheckIn}
-          disabled={checkedIn || noShow}
+          style={{ padding: "6px 10px" }}
+          onClick={() => {
+            const ts = new Date().toLocaleString();
+            setRosterActionsByTrec((prev) => ({
+              ...prev,
+              [licenseKey]: { ...(prev[licenseKey] || {}), checkInAt: ts },
+            }));
+            setStatusMsg(`✅ Checked in: ${fullName}`);
+          }}
         >
           Check In
         </button>
@@ -1289,9 +1306,15 @@ Add Student
         <button
           type="button"
           className="btnOutline"
-          style={{ padding: "6px 10px", opacity: checkedOut || noShow ? 0.55 : 1 }}
-          onClick={onCheckOut}
-          disabled={checkedOut || noShow}
+          style={{ padding: "6px 10px" }}
+          onClick={() => {
+            const ts = new Date().toLocaleString();
+            setRosterActionsByTrec((prev) => ({
+              ...prev,
+              [licenseKey]: { ...(prev[licenseKey] || {}), checkOutAt: ts },
+            }));
+            setStatusMsg(`✅ Checked out: ${fullName}`);
+          }}
         >
           Check Out
         </button>
@@ -1300,12 +1323,21 @@ Add Student
           type="button"
           className="tabBtn small"
           style={{
-            padding: "6px 10px",
+            padding: "6px 12px",
             borderRadius: 999,
             lineHeight: 1,
-            opacity: noShow ? 1 : 0.85,
+            color: "#8B0000", // deep red text
+            border: "2px solid #8B0000", // red border circle/pill
+            background: "rgba(139,0,0,0.06)",
           }}
-          onClick={onToggleNoShow}
+          onClick={() => {
+            const ts = new Date().toLocaleString();
+            setRosterActionsByTrec((prev) => ({
+              ...prev,
+              [licenseKey]: { ...(prev[licenseKey] || {}), noShowAt: ts },
+            }));
+            setStatusMsg(`🟥 No-Show: ${fullName}`);
+          }}
         >
           No-Show
         </button>
@@ -1315,7 +1347,13 @@ Add Student
           className="btnOutline"
           title="Undo / Clear Status"
           style={{ width: 34, height: 34, padding: 0 }}
-          onClick={onUndo}
+          onClick={() => {
+            setRosterActionsByTrec((prev) => ({
+              ...prev,
+              [licenseKey]: { checkInAt: undefined, checkOutAt: undefined, noShowAt: undefined },
+            }));
+            setStatusMsg(`↺ Cleared: ${fullName}`);
+          }}
         >
           ↺
         </button>
@@ -1325,7 +1363,16 @@ Add Student
           className="btnOutline"
           title="Remove from roster"
           style={{ width: 34, height: 34, padding: 0 }}
-          onClick={onRemove}
+          onClick={() => {
+            const next = rosterRows.filter((_, i) => i !== idx);
+            persistRoster(next);
+            setRosterActionsByTrec((prev) => {
+              const copy = { ...prev };
+              delete copy[licenseKey];
+              return copy;
+            });
+            setStatusMsg(`🗑 Removed: ${fullName}`);
+          }}
         >
           🗑
         </button>
@@ -1333,6 +1380,7 @@ Add Student
     </div>
   );
 })}
+
 
 
 </div>

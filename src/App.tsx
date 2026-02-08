@@ -1169,34 +1169,35 @@ Create New Class Session
             )}
           </div>
 
-          {/* Name + Email (2 lines, single-line each, no wrap) */}
-          <div style={{ minWidth: 0 }}>
-            <div
-              title={fullName}
-              style={{
-                fontWeight: 800,
-                whiteSpace: "nowrap",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-              }}
-            >
-              {fullName || "—"}
-            </div>
+{/* Name + Email (2 lines, single-line each, no wrap) */}
+<div style={{ minWidth: 0 }}>
+  <div
+    title={fullName}
+    style={{
+      fontWeight: 800,
+      whiteSpace: "nowrap",
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+    }}
+  >
+    {fullName || "—"}
+  </div>
 
-            <div
-              title={r.email || ""}
-              style={{
-                marginTop: 2,
-                fontSize: 12,
-                opacity: 0.85,
-                whiteSpace: "nowrap",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-              }}
-            >
-              {r.email || "—"}
-            </div>
-          </div>
+  <div
+    title={r.email || ""}
+    style={{
+      marginTop: 2,
+      fontSize: 12,
+      opacity: 0.85,
+      whiteSpace: "nowrap",
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+    }}
+  >
+    {r.email || "—"}
+  </div>
+</div>
+
 
           {/* TREC */}
           <div

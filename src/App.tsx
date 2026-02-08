@@ -1269,12 +1269,17 @@ Create New Class Session
   border: "2px solid #8B0000",
   background: "rgba(139,0,0,0.06)",
 
-  // ✅ this is the alignment fix
-  width: 90,
-  display: "inline-flex",
-  justifyContent: "center",
-}}
+  // ✅ this keeps the RIGHT edge where it is
+  marginLeft: "auto",
 
+  // ✅ shrink width to pull LEFT edge rightward
+  width: 96,          // try 88, 92, 96, 100 until it lines up perfectly
+
+  // ✅ keep text centered inside
+  display: "flex",
+  justifyContent: "center",
+  alignItems: "center",
+}}
 
               onClick={() => {
                 const ts = new Date().toLocaleString();

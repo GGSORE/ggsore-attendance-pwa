@@ -130,8 +130,12 @@ export default function App() {
   const [trecLicense, setTrecLicense] = useState<string>("");
   const [headshotFile, setHeadshotFile] = useState<File | null>(null);
 
-  const [userProfile, setUserProfile] = useState<Profile | null>(null);
+    const [userProfile, setUserProfile] = useState<Profile | null>(null);
   const [statusMsg, setStatusMsg] = useState<string>("");
+
+  // Photo ID cache (helps if connection drops after initial load)
+  const [cachedPhotoUrl, setCachedPhotoUrl] = useState<string>("");
+  const [cachedAt, setCachedAt] = useState<string>("");
 
   // ---------- Student Scan ----------
   const [scanSupported, setScanSupported] = useState<boolean>(false);
@@ -770,14 +774,96 @@ export default function App() {
               </>
             )}
 
-            {statusMsg ? <div className="status">{statusMsg}</div> : null}
-          </>
-        ) : (
-          <>
             <div className="topRow">
               <div>
                 <div className="welcome">{welcomeName()}</div>
                 <div className="muted">{userProfile?.email}</div>
+
+                {/* Photo ID Card */}
+                <div
+                  className="noteBox"
+                  style={{
+                    marginTop: 10,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 12,
+                    padding: 12,
+                  }}
+                >
+                  {(() => {
+                    const fullName = `${userProfile?.first_name ?? ""}${
+                      userProfile?.middle_initial ? ` ${userProfile.middle_initial}.` : ""
+                    } ${userProfile?.last_name ?? ""}`.trim();
+
+                    const trec = (userProfile?.trec_license ?? "").trim();
+                    const photo = cachedPhotoUrl || userProfile?.photo_url || "";
+
+                    const initials = `${(userProfile?.first_name?.[0] || "").toUpperCase()}${(
+                      userProfile?.last_name?.[0] || ""
+                    ).toUpperCase()}`;
+
+                    return (
+                      <>
+                        <div style={{ flex: "0 0 auto" }}>
+                          {photo ? (
+                            <img
+                              src={photo}
+                              alt={fullName || "Headshot"}
+                              onLoad={() => {
+                                // cache for later (helps if connection drops after initial load)
+                                if (userProfile?.photo_url && !cachedPhotoUrl) {
+                                  setCachedPhotoUrl(userProfile.photo_url);
+                                  setCachedAt(new Date().toLocaleString());
+                                }
+                              }}
+                              style={{
+                                width: 56,
+                                height: 56,
+                                borderRadius: 12,
+                                objectFit: "cover",
+                                display: "block",
+                              }}
+                            />
+                          ) : (
+                            <div
+                              title="No headshot on file"
+                              style={{
+                                width: 56,
+                                height: 56,
+                                borderRadius: 12,
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                fontWeight: 800,
+                                fontSize: 14,
+                                opacity: 0.8,
+                                border: "1px solid rgba(0,0,0,0.12)",
+                              }}
+                            >
+                              {initials || "—"}
+                            </div>
+                          )}
+                        </div>
+
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontWeight: 800, marginBottom: 2 }}>Photo ID</div>
+                          <div style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                            <strong>Name:</strong> {fullName || "—"}
+                          </div>
+                          <div style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                            <strong>TREC:</strong> {trec || "—"}
+                          </div>
+                          <div style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                            <strong>Email:</strong> {userProfile?.email || "—"}
+                          </div>
+                          <div className="muted" style={{ marginTop: 4 }}>
+                            {cachedAt ? `Cached: ${cachedAt}` : `Loaded: ${new Date().toLocaleString()}`}
+                          </div>
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
               </div>
 
               <div className="topActions">
@@ -806,9 +892,6 @@ export default function App() {
               </div>
             </div>
 
-            {appTab === "student" ? (
-              <>
-                <div className="sectionTitle">Check-In</div>
 
                 <div className="rowBetween">
                   <div className="sectionSubtitle">Scan QR Code</div>

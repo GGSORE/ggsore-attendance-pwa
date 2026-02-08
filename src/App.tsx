@@ -1049,19 +1049,22 @@ Add Student
 
 {rosterRows.length ? (
 <div className="table" style={{ marginTop: 10 }}>
+/* ✅ REPLACE your existing tHead block (Photo/Name/TREC/Email) with THIS 5-column version */
+
 <div
-className="tHead"
-style={{
-display: "grid",
-gridTemplateColumns: "56px 2fr 1fr 2fr",
-alignItems: "center",
-columnGap: 12,
-}}
+  className="tHead"
+  style={{
+    display: "grid",
+    gridTemplateColumns: "56px 2fr 1fr 2fr 220px",
+    alignItems: "center",
+    columnGap: 12,
+  }}
 >
-<div>Photo</div>
-<div>Name</div>
-<div>TREC</div>
-<div>Email</div>
+  <div>Photo</div>
+  <div>Name</div>
+  <div>TREC</div>
+  <div>Email</div>
+  <div>Actions</div>
 </div>
 
 {rosterRows.map((r, idx) => {
@@ -1071,15 +1074,21 @@ const photoUrl = rosterPhotoByTrec[licenseKey] || "";
 const initials = `${(r.first_name?.[0] || "").toUpperCase()}${(r.last_name?.[0] || "").toUpperCase()}`;
 
 return (
+/* ✅ ALSO REPLACE your existing tRow wrapper (the one with gridTemplateColumns: "56px 2fr 1fr 2fr")
+   with THIS matching 5-column version.
+   IMPORTANT: this is ONLY the opening <div className="tRow" ...> part — keep the inside the same for now. */
+
 <div
-className="tRow"
-key={idx}
-style={{
-display: "grid",
-gridTemplateColumns: "56px 2fr 1fr 2fr",
-alignItems: "center",
-columnGap: 12,
-}}
+  className="tRow"
+  key={idx}
+  style={{
+    display: "grid",
+    gridTemplateColumns: "56px 2fr 1fr 2fr 220px",
+    alignItems: "center",
+    columnGap: 12,
+  }}
+>
+
 >
 <div style={{ display: "flex", alignItems: "center" }}>
 {photoUrl ? (
@@ -1147,6 +1156,46 @@ textOverflow: "ellipsis",
 >
 {r.email || "—"}
 </div>
+  <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
+  <button type="button" className="btnOutline" style={{ padding: "6px 10px" }}>
+    Check In
+  </button>
+
+  <button type="button" className="btnOutline" style={{ padding: "6px 10px" }}>
+    Check Out
+  </button>
+
+  <button
+    type="button"
+    className="tabBtn small"
+    style={{
+      padding: "6px 10px",
+      borderRadius: 999,
+      lineHeight: 1,
+    }}
+  >
+    No-Show
+  </button>
+
+  <button
+    type="button"
+    className="btnOutline"
+    title="Undo / Clear Status"
+    style={{ width: 34, height: 34, padding: 0 }}
+  >
+    ↺
+  </button>
+
+  <button
+    type="button"
+    className="btnOutline"
+    title="Remove from roster"
+    style={{ width: 34, height: 34, padding: 0 }}
+  >
+    🗑
+  </button>
+</div>
+
 </div>
 );
 })}

@@ -1049,7 +1049,6 @@ Add Student
 
 {rosterRows.length ? (
 <div className="table" style={{ marginTop: 10 }}>
-/* ✅ REPLACE your existing tHead block (Photo/Name/TREC/Email) with THIS 5-column version */
 
 <div
   className="tHead"

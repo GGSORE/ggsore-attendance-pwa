@@ -30,12 +30,18 @@ course_name?: string | null;
 };
 
 type RosterRow = {
-first_name: string;
-mi: string;
-last_name: string;
-trec_license: string;
-email: string;
+  first_name: string;
+  mi: string;
+  last_name: string;
+  trec_license: string;
+  email: string;
+
+  // admin-only status fields (optional)
+  checked_in_at?: string | null;
+  checked_out_at?: string | null;
+  no_show?: boolean;
 };
+
 
 const COURSE_OPTIONS = [
 "Commercial Leasing Contracts 101™",
@@ -473,6 +479,19 @@ if (!selectedSessionId && recentSessions.length) {
 setSelectedSessionId(recentSessions[0].id);
 }
 }, [recentSessions, selectedSessionId]);
+useEffect(() => {
+  // When admin changes the selected session, load THAT session’s roster
+  if (view !== "app" || !isAdmin || appTab !== "admin") return;
+
+  try {
+    const raw = localStorage.getItem(rosterKey(selectedSessionId));
+    const loaded = raw ? (JSON.parse(raw) as RosterRow[]) : [];
+    setRosterRows(Array.isArray(loaded) ? loaded : []);
+  } catch {
+    setRosterRows([]);
+  }
+  setRosterError("");
+}, [selectedSessionId, view, isAdmin, appTab]);
 
 useEffect(() => {
 if (!supabase) return;
@@ -563,18 +582,28 @@ setStatusMsg(e?.message ?? "Session creation failed (table/permissions may need 
 }
 
 // ---------- Admin: roster ----------
-function persistRoster(next: RosterRow[]) {
-setRosterRows(next);
-try {
-localStorage.setItem("ccp_roster_preview", JSON.stringify(next));
-} catch {
-// ignore
-}
+function rosterKey(sessionId: string) {
+  return `ccp_roster_preview__${sessionId || "none"}`;
 }
 
+function persistRoster(next: RosterRow[]) {
+  setRosterRows(next);
+  try {
+    localStorage.setItem(rosterKey(selectedSessionId), JSON.stringify(next));
+  } catch {
+    // ignore
+  }
+}
+
+
 async function handleRosterUpload(file: File) {
-setRosterError("");
-try {
+  setRosterError("");
+  if (!selectedSessionId) {
+    setRosterError("Select a session first, then upload the roster.");
+    return;
+  }
+  try {
+
 const text = await file.text();
 const rows = parseCsv(text);
 if (!rows.length) {
@@ -1042,6 +1071,57 @@ Add Student
 </div>
 </div>
 
+  <div className="sectionSubtitle" style={{ marginTop: 18 }}>
+  Current Session
+</div>
+
+<div
+  className="noteBox"
+  style={{
+    marginTop: 8,
+    padding: 12,
+    borderRadius: 14,
+    background: "#fff",
+    boxShadow: "0 2px 10px rgba(0,0,0,0.06)",
+    border: "1px solid rgba(0,0,0,0.06)",
+  }}
+>
+  <div style={{ fontWeight: 800, marginBottom: 6 }}>Selected session</div>
+  <div className="muted" style={{ lineHeight: 1.35 }}>
+    {selectedSessionId
+      ? (() => {
+          const s = recentSessions.find((x) => x.id === selectedSessionId);
+          if (!s) return "Session selected (details not loaded).";
+          return `${s.course_name ? `${s.course_name} — ` : ""}${s.title} — ${new Date(s.starts_at).toLocaleString()}`;
+        })()
+      : "No session selected yet."}
+  </div>
+</div>
+
+<div className="grid1" style={{ marginTop: 10 }}>
+  <div>
+    <label className="label">Select a session</label>
+    <select
+      className="input"
+      value={selectedSessionId}
+      onChange={(e) => setSelectedSessionId(e.target.value)}
+      disabled={!recentSessions.length}
+    >
+      {recentSessions.length ? (
+        recentSessions.map((s) => (
+          <option key={s.id} value={s.id}>
+            {(s.course_name ? `${s.course_name} — ` : "")}
+            {s.title} — {new Date(s.starts_at).toLocaleString()}
+          </option>
+        ))
+      ) : (
+        <option value="">No sessions yet.</option>
+      )}
+    </select>
+  </div>
+</div>
+
+  
 <div className="sectionSubtitle">Roster Preview</div>
 <div className="muted">
 {rosterRows.length ? `${rosterRows.length} student(s) loaded.` : "No roster loaded yet."}
@@ -1057,13 +1137,17 @@ Add Student
     gridTemplateColumns: "56px 2fr 1fr 2fr 220px",
     alignItems: "center",
     columnGap: 12,
+    background: "#e8f3ff",           // ✅ light blue header
+    borderRadius: 10,
+    padding: "10px 12px",
+    fontWeight: 800,
   }}
 >
   <div>Photo</div>
-  <div>Name</div>
+  <div>Name (Email)</div>
   <div>TREC</div>
   <div>Email</div>
-  <div>Actions</div>
+  <div style={{ textAlign: "right" }}>Actions</div>
 </div>
 
 {rosterRows.map((r, idx) => {
@@ -1195,34 +1279,6 @@ Add Student
 
 </div>
 ) : null}
-
-
-<div className="sectionSubtitle" style={{ marginTop: 18 }}>
-Recent Sessions
-</div>
-
-<div className="grid1">
-<div>
-<label className="label">Select a session</label>
-<select
-className="input"
-value={selectedSessionId}
-onChange={(e) => setSelectedSessionId(e.target.value)}
-disabled={!recentSessions.length}
->
-{recentSessions.length ? (
-recentSessions.map((s) => (
-<option key={s.id} value={s.id}>
-{(s.course_name ? `${s.course_name} — ` : "")}{s.title} — {new Date(s.starts_at).toLocaleString()}
-
-</option>
-))
-) : (
-<option value="">No sessions yet.</option>
-)}
-</select>
-</div>
-</div>
 
 
 {statusMsg ? <div className="status">{statusMsg}</div> : null}

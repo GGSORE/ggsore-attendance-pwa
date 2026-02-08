@@ -1381,18 +1381,10 @@ Add Student
   );
 })}
 
-
-
 </div>
 ) : null}
 
-
 {statusMsg ? <div className="status">{statusMsg}</div> : null}
-</>
-)}
-</>
-)}
-
 
 <footer className="footer">© {new Date().getFullYear()} ClassCheck Pro™</footer>
 </div>

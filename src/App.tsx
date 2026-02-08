@@ -258,6 +258,8 @@ export default function App() {
       if (!firstName) missing.push("first name");
       if (!lastName) missing.push("last name");
       if (!trecLicense) missing.push("TREC license");
+      if (!headshotFile) missing.push("headshot");
+
       if (missing.length) {
         setStatusMsg(`Please complete: ${missing.join(", ")}.`);
         return;
@@ -744,7 +746,7 @@ export default function App() {
 
                 <div className="grid1">
                   <div>
-                    <label className="label">Headshot (optional)</label>
+                    <label className="label">Headshot (Required)</label>
                     <input
                       className="input"
                       type="file"

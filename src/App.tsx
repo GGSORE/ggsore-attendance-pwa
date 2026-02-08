@@ -1262,13 +1262,19 @@ Create New Class Session
               type="button"
               className="tabBtn small"
               style={{
-                padding: "6px 12px",
-                borderRadius: 999,
-                lineHeight: 1,
-                color: "#8B0000",
-                border: "2px solid #8B0000",
-                background: "rgba(139,0,0,0.06)",
-              }}
+  padding: "6px 12px",
+  borderRadius: 999,
+  lineHeight: 1,
+  color: "#8B0000",
+  border: "2px solid #8B0000",
+  background: "rgba(139,0,0,0.06)",
+
+  // ✅ this is the alignment fix
+  width: 90,
+  display: "inline-flex",
+  justifyContent: "center",
+}}
+
               onClick={() => {
                 const ts = new Date().toLocaleString();
                 setRosterActionsByTrec((prev) => ({

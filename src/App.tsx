@@ -1149,7 +1149,7 @@ export default function App() {
                   </div>
                 ) : null}
 
-                               <div className="sectionSubtitle" style={{ marginTop: 18 }}>
+                                <div className="sectionSubtitle" style={{ marginTop: 18 }}>
                   Recent Sessions
                 </div>
 
@@ -1165,8 +1165,8 @@ export default function App() {
                       {recentSessions.length ? (
                         recentSessions.map((s) => (
                           <option key={s.id} value={s.id}>
-                           {(s.course_name ? `${s.course_name} — ` : "")}{s.title} — {new Date(s.starts_at).toLocaleString()}
-
+                            {(s.course_name ? `${s.course_name} — ` : "")}
+                            {s.title} — {new Date(s.starts_at).toLocaleString()}
                           </option>
                         ))
                       ) : (
@@ -1176,16 +1176,8 @@ export default function App() {
                   </div>
                 </div>
 
-
                 {statusMsg ? <div className="status">{statusMsg}</div> : null}
               </>
             )}
           </>
         )}
-
-
-        <footer className="footer">© {new Date().getFullYear()} ClassCheck Pro™</footer>
-      </div>
-    </div>
-  );
-}

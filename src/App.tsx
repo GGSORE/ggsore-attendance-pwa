@@ -36,12 +36,13 @@ type RosterRow = {
   trec_license: string;
   email: string;
 
+  note?: string; // ✅ saved per student (stored with roster in localStorage)
+
   // admin-only status fields (optional)
   checked_in_at?: string | null;
   checked_out_at?: string | null;
   no_show?: boolean;
 };
-
 
 const COURSE_OPTIONS = [
 "Commercial Leasing Contracts 101™",
@@ -168,12 +169,14 @@ return [];
 });
 const [rosterError, setRosterError] = useState<string>("");
 const [manualStudent, setManualStudent] = useState<RosterRow>({
-first_name: "",
-mi: "",
-last_name: "",
-trec_license: "",
-email: "",
+  first_name: "",
+  mi: "",
+  last_name: "",
+  trec_license: "",
+  email: "",
+  note: "",
 });
+
 const [rosterPhotoByTrec, setRosterPhotoByTrec] = useState<Record<string, string>>({});
 const [rosterActionsByTrec, setRosterActionsByTrec] = useState<
   Record<
@@ -664,7 +667,7 @@ return;
 }
 const next = [r, ...rosterRows];
 persistRoster(next);
-setManualStudent({ first_name: "", mi: "", last_name: "", trec_license: "", email: "" });
+setManualStudent({ first_name: "", mi: "", last_name: "", trec_license: "", email: "", note: "" });
 setStatusMsg("Student added to roster preview.");
 }
 
@@ -1197,19 +1200,27 @@ Create New Class Session
     {r.email || "—"}
   </div>
 
-  <div
-    title="Quick note"
-    style={{
-      marginTop: 2,
-      fontSize: 12,
-      opacity: 0.75,
-      whiteSpace: "nowrap",
-      overflow: "hidden",
-      textOverflow: "ellipsis",
+ <div style={{ marginTop: 4, display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+  <span style={{ fontSize: 12, opacity: 0.75, whiteSpace: "nowrap" }}>Note:</span>
+
+  <input
+    className="input"
+    value={r.note ?? ""}
+    placeholder="type a quick note…"
+    onChange={(e) => {
+      const val = e.target.value;
+      const next = rosterRows.map((row, i) => (i === idx ? { ...row, note: val } : row));
+      persistRoster(next); // ✅ saves to localStorage by session
     }}
-  >
-    Note: —
-  </div>
+    style={{
+      height: 28,
+      padding: "4px 8px",
+      fontSize: 12,
+      width: "100%",
+      minWidth: 0,
+    }}
+  />
+</div>
 </div>
 
 

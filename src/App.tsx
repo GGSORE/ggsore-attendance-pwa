@@ -674,7 +674,8 @@ setStatusMsg("Student added to roster preview.");
 // ---------- Render ----------
 return (
 <div className="page">
-<div className="card">
+<div className={"card" + (view === "app" && isAdmin && appTab === "admin" ? " cardWide" : "")}>
+
 <header className="header">
 <img className="brandLogo" src="/classcheckpro-logo.png" alt="ClassCheck Pro™" draggable={false} />
 </header>

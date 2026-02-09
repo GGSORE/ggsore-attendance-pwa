@@ -1206,7 +1206,7 @@ Create New Class Session
   <input
     className="input"
     value={r.note ?? ""}
-    placeholder="type a quick note…"
+    placeholder="i.e. pymt status"
     onChange={(e) => {
       const val = e.target.value;
       const next = rosterRows.map((row, i) => (i === idx ? { ...row, note: val } : row));

@@ -25,6 +25,10 @@ body {
   box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
   padding: 28px;
 }
+/* Admin/Instructor wider layout (desktop-first) */
+.cardWide {
+  max-width: 1180px; /* adjust to taste: 1100–1280 */
+}
 
 /* ========== HEADER ========== */
 .header {

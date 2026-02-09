@@ -1098,7 +1098,7 @@ Create New Class Session
       className="tHead"
       style={{
         display: "grid",
-        gridTemplateColumns: "56px 2.6fr 1.1fr 1.7fr 240px",
+       gridTemplateColumns: "56px 2.3fr 1.6fr 2.1fr 240px",
         alignItems: "center",
         columnGap: 12,
         background: "rgba(45, 120, 255, 0.10)", // ✅ light blue header
@@ -1131,7 +1131,7 @@ Create New Class Session
           key={idx}
           style={{
             display: "grid",
-            gridTemplateColumns: "56px 2.6fr 1.1fr 1.7fr 240px",
+            gridTemplateColumns: "56px 2.3fr 1.6fr 2.1fr 240px",
             alignItems: "center",
             columnGap: 12,
             padding: "10px 12px",

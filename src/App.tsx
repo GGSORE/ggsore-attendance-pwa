@@ -1213,12 +1213,13 @@ Create New Class Session
       persistRoster(next); // ✅ saves to localStorage by session
     }}
     style={{
-      height: 28,
-      padding: "4px 8px",
-      fontSize: 12,
-      width: "100%",
-      minWidth: 0,
-    }}
+  height: 26,          // shorter
+  padding: "4px 8px",  // tighter
+  width: "150%",       // ~1.5x wider
+  maxWidth: 360,       // prevents it from getting ridiculous
+  fontSize: 12,
+}}
+
   />
 </div>
 </div>

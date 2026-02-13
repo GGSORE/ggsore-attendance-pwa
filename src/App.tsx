@@ -492,19 +492,7 @@ if (!selectedSessionId && recentSessions.length) {
 setSelectedSessionId(recentSessions[0].id);
 }
 }, [recentSessions, selectedSessionId]);
-useEffect(() => {
-  // When admin changes the selected session, load THAT session’s roster
-  if (view !== "app" || !isAdmin || appTab !== "admin") return;
 
-  try {
-    const raw = localStorage.getItem(rosterKey(selectedSessionId));
-    const loaded = raw ? (JSON.parse(raw) as RosterRow[]) : [];
-    setRosterRows(Array.isArray(loaded) ? loaded : []);
-  } catch {
-    setRosterRows([]);
-  }
-  setRosterError("");
-}, [selectedSessionId, view, isAdmin, appTab]);
 
 useEffect(() => {
 if (!supabase) return;
@@ -594,18 +582,87 @@ setStatusMsg(e?.message ?? "Session creation failed (table/permissions may need 
 }
 }
 
-// ---------- Admin: roster ----------
-function rosterKey(sessionId: string) {
-  return `ccp_roster_preview__${sessionId || "none"}`;
+  async function loadRosterFromDb(sessionId: string) {
+  if (!supabase) return;
+  if (!sessionId) {
+    setRosterRows([]);
+    return;
+  }
+
+  setRosterError("");
+  try {
+    const { data, error } = await supabase
+      .from("gg_roster_rows")
+      .select("first_name,mi,last_name,trec_license,email,notes")
+      .eq("session_id", sessionId)
+      .order("last_name", { ascending: true })
+      .order("first_name", { ascending: true });
+
+    if (error) throw error;
+
+    const rows: RosterRow[] =
+      (data as any[] | null)?.map((r) => ({
+        first_name: r.first_name ?? "",
+        mi: r.mi ?? "",
+        last_name: r.last_name ?? "",
+        trec_license: r.trec_license ?? "",
+        email: r.email ?? "",
+        notes: r.notes ?? "",
+      })) ?? [];
+
+    setRosterRows(rows);
+  } catch (e: any) {
+    setRosterRows([]);
+    setRosterError(e?.message ?? "Could not load roster from database.");
+  }
 }
 
-function persistRoster(next: RosterRow[]) {
-  setRosterRows(next);
-  try {
-    localStorage.setItem(rosterKey(selectedSessionId), JSON.stringify(next));
-  } catch {
-    // ignore
-  }
+async function upsertRosterRows(sessionId: string, rows: RosterRow[]) {
+  if (!supabase) return;
+  if (!sessionId) throw new Error("No session selected.");
+
+  // NOTE: onConflict must match your UNIQUE(session_id, trec_license)
+  const payload = rows.map((r) => ({
+    session_id: sessionId,
+    first_name: r.first_name || "",
+    mi: r.mi || null,
+    last_name: r.last_name || "",
+    trec_license: r.trec_license || "",
+    email: r.email || null,
+    notes: (r as any).notes ?? null,
+  }));
+
+  const { error } = await supabase
+    .from("gg_roster_rows")
+    .upsert(payload, { onConflict: "session_id,trec_license" });
+
+  if (error) throw error;
+}
+
+async function updateRosterNote(sessionId: string, trecLicense: string, note: string) {
+  if (!supabase) return;
+  if (!sessionId) return;
+
+  const { error } = await supabase
+    .from("gg_roster_rows")
+    .update({ notes: note })
+    .eq("session_id", sessionId)
+    .eq("trec_license", trecLicense);
+
+  if (error) throw error;
+}
+
+async function deleteRosterRow(sessionId: string, trecLicense: string) {
+  if (!supabase) return;
+  if (!sessionId) return;
+
+  const { error } = await supabase
+    .from("gg_roster_rows")
+    .delete()
+    .eq("session_id", sessionId)
+    .eq("trec_license", trecLicense);
+
+  if (error) throw error;
 }
 
 
@@ -671,6 +728,8 @@ setManualStudent({ first_name: "", mi: "", last_name: "", trec_license: "", emai
 setStatusMsg("Student added to roster preview.");
 }
 
+
+  
 // ---------- Render ----------
 return (
 <div className="page">

@@ -1305,7 +1305,7 @@ Create New Class Session
     });
   }}
 />
-
+</div>
           {/* TREC */}
           <div
             title={r.trec_license}

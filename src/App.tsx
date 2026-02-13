@@ -724,7 +724,7 @@ setRosterError(e?.message || "Could not read roster file.");
 }
 }
 
-function addManualStudentToRoster() {
+async function addManualStudentToRoster() {
 setRosterError("");
 const r = { ...manualStudent };
 if (!r.first_name || !r.last_name || !r.trec_license) {

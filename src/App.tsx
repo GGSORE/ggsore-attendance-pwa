@@ -1274,6 +1274,38 @@ Create New Class Session
     {r.email || "—"}
   </div>
 
+{/* Notes (editable, saved to DB) */}
+<input
+  className="input"
+  value={(r as any).notes ?? ""}
+  placeholder="Notes…"
+  style={{
+    marginTop: 6,
+    height: 28,          // shorter height
+    padding: "4px 8px",
+    fontSize: 12,
+    width: "150%",       // ~1.5x wider
+    maxWidth: "520px",   // safety cap so it doesn't go insane
+  }}
+  onChange={(e) => {
+    const val = e.target.value;
+    const licenseKey = (r.trec_license || "").trim();
+
+    // update UI immediately
+    setRosterRows((prev) =>
+      prev.map((x) =>
+        x.trec_license === r.trec_license ? ({ ...x, notes: val } as any) : x
+      )
+    );
+
+    // save to DB
+    updateRosterNote(selectedSessionId, licenseKey, val).catch(() => {
+      // keep quiet to avoid noise
+    });
+  }}
+/>
+
+  
  <div style={{ marginTop: 4, display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
   <span style={{ fontSize: 12, opacity: 0.75, whiteSpace: "nowrap" }}>Note:</span>
 
@@ -1281,11 +1313,21 @@ Create New Class Session
     className="input"
     value={r.note ?? ""}
     placeholder="i.e. pymt status"
-    onChange={(e) => {
-      const val = e.target.value;
-      const next = rosterRows.map((row, i) => (i === idx ? { ...row, note: val } : row));
-      persistRoster(next); // ✅ saves to localStorage by session
-    }}
+onChange={(e) => {
+  const val = e.target.value;
+  const licenseKey = (r.trec_license || "").trim();
+
+  // ✅ Update UI immediately (no localStorage)
+  setRosterRows((prev) =>
+    prev.map((row, i) => (i === idx ? { ...row, note: val } : row))
+  );
+
+  // ✅ Save to DB (gg_roster_rows.notes)
+  updateRosterNote(selectedSessionId, licenseKey, val).catch(() => {
+    // keep silent to avoid noise
+  });
+}}
+
     style={{
   height: 26,          // shorter
   padding: "4px 8px",  // tighter

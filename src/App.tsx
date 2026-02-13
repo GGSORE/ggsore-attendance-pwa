@@ -1294,7 +1294,8 @@ Create New Class Session
     // update UI immediately
     setRosterRows((prev) =>
       prev.map((x) =>
-        x.trec_license === r.trec_license ? ({ ...x, notes: val } as any) : x
+        (x.trec_license || "").trim() === licenseKey
+ ? ({ ...x, notes: val } as any) : x
       )
     );
 
@@ -1304,43 +1305,6 @@ Create New Class Session
     });
   }}
 />
-
-  
- <div style={{ marginTop: 4, display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
-  <span style={{ fontSize: 12, opacity: 0.75, whiteSpace: "nowrap" }}>Note:</span>
-
-  <input
-    className="input"
-    value={r.note ?? ""}
-    placeholder="i.e. pymt status"
-onChange={(e) => {
-  const val = e.target.value;
-  const licenseKey = (r.trec_license || "").trim();
-
-  // ✅ Update UI immediately (no localStorage)
-  setRosterRows((prev) =>
-    prev.map((row, i) => (i === idx ? { ...row, note: val } : row))
-  );
-
-  // ✅ Save to DB (gg_roster_rows.notes)
-  updateRosterNote(selectedSessionId, licenseKey, val).catch(() => {
-    // keep silent to avoid noise
-  });
-}}
-
-    style={{
-  height: 26,          // shorter
-  padding: "4px 8px",  // tighter
-  width: "150%",       // ~1.5x wider
-  maxWidth: 360,       // prevents it from getting ridiculous
-  fontSize: 12,
-}}
-
-  />
-</div>
-</div>
-
-
 
           {/* TREC */}
           <div

@@ -493,7 +493,14 @@ setSelectedSessionId(recentSessions[0].id);
 }
 }, [recentSessions, selectedSessionId]);
 
+useEffect(() => {
+  if (view !== "app" || !isAdmin || appTab !== "admin") return;
+  if (!selectedSessionId) return;
+  loadRosterFromDb(selectedSessionId);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [selectedSessionId, view, isAdmin, appTab]);
 
+  
 useEffect(() => {
 if (!supabase) return;
 if (view !== "app" || !isAdmin || appTab !== "admin") return;
@@ -708,8 +715,10 @@ email: iEmail > -1 ? (r[iEmail] || "").trim() : "",
 }))
 .filter((r) => r.first_name && r.last_name && r.trec_license);
 
-persistRoster(clean);
-setStatusMsg(`Roster loaded: ${clean.length} student${clean.length === 1 ? "" : "s"}.`);
+await upsertRosterRows(selectedSessionId, clean);
+await loadRosterFromDb(selectedSessionId);
+setStatusMsg(`Roster saved: ${clean.length} student${clean.length === 1 ? "" : "s"}.`);
+
 } catch (e: any) {
 setRosterError(e?.message || "Could not read roster file.");
 }
@@ -722,10 +731,15 @@ if (!r.first_name || !r.last_name || !r.trec_license) {
 setRosterError("Please enter first name, last name, and TREC license for manual add.");
 return;
 }
-const next = [r, ...rosterRows];
-persistRoster(next);
-setManualStudent({ first_name: "", mi: "", last_name: "", trec_license: "", email: "", note: "" });
-setStatusMsg("Student added to roster preview.");
+  try {
+    await upsertRosterRows(selectedSessionId, [{ ...r, notes: (r as any).notes ?? "" } as any]);
+    await loadRosterFromDb(selectedSessionId);
+    setManualStudent({ first_name: "", mi: "", last_name: "", trec_license: "", email: "" });
+    setStatusMsg("Student added to roster.");
+  } catch (e: any) {
+    setRosterError(e?.message ?? "Could not add student.");
+  }
+
 }
 
 

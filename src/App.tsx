@@ -1466,7 +1466,7 @@ Create New Class Session
   </div>
 </footer>
 
-</div>
-</div>
+</>
 );
+  
 }

@@ -1465,8 +1465,8 @@ Create New Class Session
     policies and applicable rules.
   </div>
 </footer>
-
-
+</>
+)}
 </div>
 </div>
 );

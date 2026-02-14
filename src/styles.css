@@ -1,0 +1,282 @@
+/* ========== GLOBAL ========== */
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "Century Gothic", CenturyGothic, AppleGothic, sans-serif;
+  background: #f5f6fb;
+  color: #1f1f1f;
+}
+
+/* ========== PAGE LAYOUT ========== */
+.page {
+  display: flex;
+  justify-content: center;
+  padding: 40px 16px;
+}
+
+.card {
+  width: 100%;
+  max-width: 760px;
+  background: #ffffff;
+  border-radius: 14px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
+  padding: 28px;
+}
+/* Admin/Instructor wider layout (desktop-first) */
+.cardWide {
+  max-width: 1180px; /* adjust to taste: 1100–1280 */
+}
+
+/* ========== HEADER ========== */
+.header {
+  text-align: center;
+  margin-bottom: 16px;
+}
+
+.brandLogo {
+  width: 100%;
+  max-width: 520px;
+  height: auto;
+}
+
+/* ========== TEXT ELEMENTS ========== */
+.subhead {
+  text-align: center;
+  margin-bottom: 16px;
+  color: #555;
+}
+
+.sectionTitle {
+  font-weight: bold;
+  margin: 18px 0 10px;
+}
+
+.sectionSubtitle {
+  font-weight: 600;
+  margin: 14px 0 8px;
+}
+
+.label {
+  font-size: 14px;
+  margin-bottom: 4px;
+  display: block;
+}
+
+.muted {
+  font-size: 13px;
+  color: #777;
+}
+
+.status {
+  margin-top: 12px;
+  padding: 10px;
+  border-radius: 6px;
+  background: #eef0ff;
+  font-size: 14px;
+}
+
+/* ========== INPUTS ========== */
+.input {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid #dcdcdc;
+  font-family: "Century Gothic", sans-serif;
+  font-size: 14px;
+}
+
+/* ========== BUTTONS ========== */
+.btnPrimary {
+  background: #12086F;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 10px 18px;
+  font-family: "Century Gothic", sans-serif;
+  cursor: pointer;
+}
+
+.btnOutline {
+  background: white;
+  color: #12086F;
+  border: 1px solid #12086F;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-family: "Century Gothic", sans-serif;
+  cursor: pointer;
+}
+
+.actions {
+  margin-top: 14px;
+  display: flex;
+  gap: 10px;
+}
+
+/* ========== TABS ========== */
+.tabRow {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+.tabBtn {
+  flex: 1;
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid #ccc;
+  background: #f2f2f2;
+  cursor: pointer;
+  font-family: "Century Gothic", sans-serif;
+}
+
+.tabBtnActive {
+  background: #12086F;
+  color: white;
+  border-color: #12086F;
+}
+
+.tabBtn.small {
+  padding: 6px 12px;
+  font-size: 13px;
+}
+
+/* ========== GRIDS ========== */
+.grid1 { display: grid; gap: 12px; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+
+/* ========== HEADER USER AREA ========== */
+.topRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.topActions {
+  display: flex;
+  gap: 8px;
+}
+
+.welcome {
+  font-weight: bold;
+  font-size: 18px;
+}
+
+/* ========== HEADSHOT AREA ========== */
+.welcomeRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.welcomeRight {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.avatar {
+  width: 56px;
+  height: 56px;
+  border-radius: 999px;
+  object-fit: cover;
+  border: 1px solid rgba(0,0,0,0.08);
+}
+
+.avatarPlaceholder {
+  width: 56px;
+  height: 56px;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  background: rgba(18, 8, 111, 0.08);
+  border: 1px solid rgba(0,0,0,0.08);
+}
+
+.miniAvatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  object-fit: cover;
+  border: 1px solid rgba(0,0,0,0.08);
+}
+
+.miniAvatarPlaceholder {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: rgba(18, 8, 111, 0.08);
+  border: 1px solid rgba(0,0,0,0.08);
+}
+
+/* ========== SCAN AREA ========== */
+.scanBox {
+  margin-top: 12px;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid #ddd;
+}
+
+.video {
+  width: 100%;
+  height: auto;
+}
+
+.scanUnsupported {
+  padding: 20px;
+  text-align: center;
+  font-size: 14px;
+  color: #666;
+}
+
+/* ========== TABLE ========== */
+.table {
+  margin-top: 10px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid #ddd;
+}
+
+.tHead, .tRow {
+  display: grid;
+  grid-template-columns: 40px 2fr 1fr 2fr;
+  align-items: center;
+  padding: 8px 12px;
+}
+
+/* Hide the blank headshot header cell so the text headings still line up */
+.tHead > div:first-child {
+  opacity: 0;
+}
+
+
+.tHead {
+  background: #f4f4f4;
+  font-weight: bold;
+}
+
+.tRow:nth-child(even) {
+  background: #fafafa;
+}
+
+.tEmpty {
+  padding: 10px;
+  text-align: center;
+  font-size: 13px;
+  color: #777;
+}
+
+/* ========== FOOTER ========== */
+.footer {
+  margin-top: 24px;
+  text-align: center;
+  font-size: 13px;
+  color: #777;
+}

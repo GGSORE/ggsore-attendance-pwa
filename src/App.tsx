@@ -30,19 +30,20 @@ course_name?: string | null;
 };
 
 type RosterRow = {
-first_name: string;
-mi: string;
-last_name: string;
-trec_license: string;
-email: string;
+  first_name: string;
+  mi: string;
+  last_name: string;
+  trec_license: string;
+  email: string;
 
-note?: string; // ✅ saved per student (stored with roster in localStorage)
+  notes?: string; // ✅ matches gg_roster_rows.notes in Supabase
 
-// admin-only status fields (optional)
-checked_in_at?: string | null;
-checked_out_at?: string | null;
-no_show?: boolean;
+  // admin-only status fields (optional)
+  checked_in_at?: string | null;
+  checked_out_at?: string | null;
+  no_show?: boolean;
 };
+
 
 const COURSE_OPTIONS = [
 "Commercial Leasing Contracts 101™",

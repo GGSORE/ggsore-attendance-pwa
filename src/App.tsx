@@ -1448,10 +1448,6 @@ Create New Class Session
 ) : null}
 
 {statusMsg ? <div className="status">{statusMsg}</div> : null}
-</>
-)}
-</>
-)}
 
 <footer className="footer">
   <div style={{ fontWeight: 800 }}>

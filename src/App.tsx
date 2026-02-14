@@ -1460,13 +1460,13 @@ Create New Class Session
   </div>
 
   <div className="muted" style={{ marginTop: 6, lineHeight: 1.35 }}>
-    <span style={{ fontWeight: 700 }}>Instructor/Admin Notice:</span> Manual roster actions are
-    administrative tools only and must be used in accordance with course policies and applicable
-    rules.
+    <span style={{ fontWeight: 700 }}>Instructor/Admin Notice:</span>{" "}
+    Manual roster actions are administrative tools only and must be used in accordance with course
+    policies and applicable rules.
   </div>
 </footer>
 
-</>
+</div>
+</div>
 );
-  
 }

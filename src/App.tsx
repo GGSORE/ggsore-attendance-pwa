@@ -175,7 +175,7 @@ mi: "",
 last_name: "",
 trec_license: "",
 email: "",
-note: "",
+notes: "",
 });
 
 const [rosterPhotoByTrec, setRosterPhotoByTrec] = useState<Record<string, string>>({});
@@ -671,6 +671,15 @@ const { error } = await supabase
 .eq("trec_license", trecLicense);
 
 if (error) throw error;
+}
+
+function persistRoster(nextRows: RosterRow[]) {
+setRosterRows(nextRows);
+try {
+localStorage.setItem("ccp_roster_preview", JSON.stringify(nextRows));
+} catch {
+// non-fatal (e.g. storage unavailable/quota)
+}
 }
 
 

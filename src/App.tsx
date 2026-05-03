@@ -5,6 +5,7 @@ import "./styles.css";
 type View = "auth" | "app";
 type AuthTab = "login" | "create";
 type AppTab = "student" | "admin";
+type AdminViewTab = "signIn" | "list";
 
 type Profile = {
 id: string;
@@ -158,6 +159,7 @@ const [sessionStart, setSessionStart] = useState<string>("");
 const [sessionEnd, setSessionEnd] = useState<string>("");
 const [recentSessions, setRecentSessions] = useState<SessionRow[]>([]);
 const [selectedSessionId, setSelectedSessionId] = useState<string>("");
+const [adminViewTab, setAdminViewTab] = useState<AdminViewTab>("list");
 
 // roster tools
 const [rosterRows, setRosterRows] = useState<RosterRow[]>(() => {
@@ -935,7 +937,7 @@ Sign out
 </div>
 </div>
 
-{appTab === "student" ? (
+	{appTab === "student" ? (
 <>
 <div className="sectionTitle">Check-In</div>
 {/* Photo ID Card (shows after login) */}
@@ -1048,14 +1050,73 @@ Submit Check-In
 
 {statusMsg ? <div className="status">{statusMsg}</div> : null}
 </>
-) : (
-<>
-<div className="sectionTitle">Admin / Instructor</div>
+	) : (
+	<>
+	<div className="sectionTitle">Admin / Instructor</div>
+	{(() => {
+	const activeSession = recentSessions.find((s) => s.id === selectedSessionId) ?? recentSessions[0];
+	const displayTitle = (activeSession?.title || sessionTitle || "No session selected").trim();
+	const displayCourse = (activeSession?.course_name || selectedCourse || "Course").trim();
+	const starts = activeSession?.starts_at ? new Date(activeSession.starts_at).toLocaleString() : "Not set";
+	const ends = activeSession?.ends_at ? new Date(activeSession.ends_at).toLocaleString() : "Not set";
+	const checkInCode = activeSession?.checkin_code || "—";
+	const checkOutCode = activeSession?.checkout_code || "—";
+	return (
+	<div className="adminDashboard">
+	<div className="adminHeaderCard">
+	<div className="adminHeaderLeft">
+	<div className="adminCourse">{displayCourse}</div>
+	<div className="adminSessionTitle">{displayTitle}</div>
+	<div className="adminMeta"><strong>Start:</strong> {starts}</div>
+	<div className="adminMeta"><strong>End:</strong> {ends}</div>
+	<div className="adminMeta">
+	<strong>Details:</strong>{" "}
+	{activeSession?.checkin_expires_at || activeSession?.checkout_expires_at
+	? `Check-in closes ${activeSession?.checkin_expires_at ? new Date(activeSession.checkin_expires_at).toLocaleString() : "—"} • Check-out closes ${activeSession?.checkout_expires_at ? new Date(activeSession.checkout_expires_at).toLocaleString() : "—"}`
+	: "Use Session Setup below to create/update class details."}
+	</div>
+	</div>
+	<div className="adminHeaderRight">
+	<div className="qrBlock">
+	<div className="qrLabel">Check-In QR</div>
+	<div className="qrCodeBox">{checkInCode}</div>
+	</div>
+	<div className="qrBlock">
+	<div className="qrLabel">Check-Out QR</div>
+	<div className="qrCodeBox">{checkOutCode}</div>
+	</div>
+	</div>
+	</div>
 
-<div className="grid2">
-<div>
-<label className="label">Course</label>
-<select className="input" value={selectedCourse} onChange={(e) => setSelectedCourse(e.target.value)}>
+	<div className="tabRow adminTabRow">
+	<button
+	type="button"
+	className={"tabBtn" + (adminViewTab === "signIn" ? " tabBtnActive" : "")}
+	onClick={() => setAdminViewTab("signIn")}
+	>
+	Sign-In View
+	</button>
+	<button
+	type="button"
+	className={"tabBtn" + (adminViewTab === "list" ? " tabBtnActive" : "")}
+	onClick={() => setAdminViewTab("list")}
+	>
+	List View
+	</button>
+	</div>
+
+		<div className="adminContent">
+		<div className="adminCountLine">
+		{rosterRows.length ? `${rosterRows.length} student(s) loaded.` : "No roster loaded yet."}
+		</div>
+		<details className="adminUtilityPanel">
+		<summary>Session Setup & Roster Tools</summary>
+		<div className="adminUtilityBody">
+		<div className="sectionSubtitle">Session Setup</div>
+	<div className="grid2">
+	<div>
+	<label className="label">Course</label>
+	<select className="input" value={selectedCourse} onChange={(e) => setSelectedCourse(e.target.value)}>
 {COURSE_OPTIONS.map((c) => (
 <option key={c} value={c}>
 {c}
@@ -1096,13 +1157,13 @@ onChange={(e) => setSessionEnd(e.target.value)}
 </div>
 
 <div className="actions">
-<button type="button" className="btnPrimary" onClick={createSession}>
-Create New Class Session
-</button>
-</div>
-<div className="sectionSubtitle">Roster</div>
+	<button type="button" className="btnPrimary" onClick={createSession}>
+	Create New Class Session
+	</button>
+	</div>
+	<div className="sectionSubtitle">Roster Tools</div>
 
-<div className="grid2">
+	<div className="grid2">
 <div>
 <label className="label">Upload roster CSV</label>
 <input
@@ -1168,37 +1229,37 @@ Add Student
 </button>
 </div>
 </div>
-</div>
+	</div>
 
-<div className="sectionSubtitle">Roster Preview</div>
-<div className="muted">
-{rosterRows.length ? `${rosterRows.length} student(s) loaded.` : "No roster loaded yet."}
-</div>
+		</div>
+		</details>
+		<div className="sectionSubtitle adminRosterTitle">Roster</div>
 
-{rosterRows.length ? (
-<div className="table" style={{ marginTop: 10 }}>
-{/* ✅ ONE header row ONLY (5 columns) */}
-<div
-className="tHead"
-style={{
-display: "grid",
-gridTemplateColumns: "56px 2.3fr 1.6fr 2.1fr 240px",
-alignItems: "center",
-columnGap: 12,
-background: "rgba(45, 120, 255, 0.10)", // ✅ light blue header
-borderRadius: 10,
-padding: "10px 12px",
-fontWeight: 800,
-}}
->
-<div>Photo</div>
-<div>Name / Email</div>
-<div>TREC</div>
-<div>Status</div>
-<div style={{ textAlign: "right" }}>Actions</div>
-</div>
+	{rosterRows.length ? (
+	<div className="tableWrap">
+	<div className="table adminTable" style={{ marginTop: 10 }}>
+	{/* ✅ ONE header row ONLY (5 columns) */}
+	<div
+	className="tHead"
+	style={{
+	display: "grid",
+	gridTemplateColumns: "2.4fr 1.2fr 1.4fr 1.8fr 1.5fr",
+	alignItems: "center",
+	columnGap: 12,
+	background: "rgba(18, 8, 111, 0.08)",
+	borderRadius: 10,
+	padding: "10px 12px",
+	fontWeight: 800,
+	}}
+	>
+	<div>Name / Email</div>
+	<div>TREC</div>
+	<div>Status</div>
+	<div style={{ textAlign: "right" }}>Actions</div>
+	<div>Notes</div>
+	</div>
 
-{rosterRows.map((r, idx) => {
+	{rosterRows.map((r, idx) => {
 const fullName = `${r.first_name}${r.mi ? ` ${r.mi}.` : ""} ${r.last_name}`.trim();
 const licenseKey = (r.trec_license || "").trim();
 const photoUrl = rosterPhotoByTrec[licenseKey] || "";
@@ -1210,68 +1271,60 @@ const checkOutAt = actions.checkOutAt || "";
 const noShowAt = actions.noShowAt || "";
 
 return (
-<div
-className="tRow"
-key={idx}
-style={{
-display: "grid",
-gridTemplateColumns: "56px 2.3fr 1.6fr 2.1fr 240px",
-alignItems: "center",
-columnGap: 12,
-padding: "10px 12px",
-}}
->
-{/* Photo */}
-<div style={{ display: "flex", alignItems: "center" }}>
-{photoUrl ? (
-<img
-src={photoUrl}
-alt={fullName}
-style={{
-width: 44,
-height: 44,
-borderRadius: 10,
-objectFit: "cover",
-display: "block",
-}}
-/>
-) : (
-<div
-title="No headshot on file"
-style={{
-width: 44,
-height: 44,
-borderRadius: 10,
-display: "flex",
-alignItems: "center",
-justifyContent: "center",
-fontWeight: 700,
-fontSize: 12,
-opacity: 0.7,
-border: "1px solid rgba(0,0,0,0.12)",
-}}
->
-{initials || "—"}
-</div>
-)}
-</div>
+	<div
+	className="tRow"
+	key={idx}
+	style={{
+	display: "grid",
+	gridTemplateColumns: "2.4fr 1.2fr 1.4fr 1.8fr 1.5fr",
+	alignItems: "center",
+	columnGap: 12,
+	padding: "12px",
+	}}
+	>
+	{/* Name + Email + Photo */}
+	<div style={{ minWidth: 0 }}>
+	<div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+	{photoUrl ? (
+	<img
+	src={photoUrl}
+	alt={fullName}
+	style={{ width: 34, height: 34, borderRadius: 8, objectFit: "cover", display: "block" }}
+	/>
+	) : (
+	<div
+	title="No headshot on file"
+	style={{
+	width: 34,
+	height: 34,
+	borderRadius: 8,
+	display: "flex",
+	alignItems: "center",
+	justifyContent: "center",
+	fontWeight: 700,
+	fontSize: 11,
+	opacity: 0.7,
+	border: "1px solid rgba(0,0,0,0.12)",
+	}}
+	>
+	{initials || "—"}
+	</div>
+	)}
+	<div
+	title={fullName}
+	style={{
+	fontWeight: 800,
+	whiteSpace: "nowrap",
+	overflow: "hidden",
+	textOverflow: "ellipsis",
+	}}
+	>
+	{fullName || "—"}
+	</div>
+	</div>
 
-{/* Name + Email + Quick Note (3 lines, single-line each, no wrap) */}
-<div style={{ minWidth: 0 }}>
-<div
-title={fullName}
-style={{
-fontWeight: 800,
-whiteSpace: "nowrap",
-overflow: "hidden",
-textOverflow: "ellipsis",
-}}
->
-{fullName || "—"}
-</div>
-
-<div
-title={r.email || ""}
+	<div
+	title={r.email || ""}
 style={{
 marginTop: 2,
 fontSize: 12,
@@ -1280,44 +1333,11 @@ whiteSpace: "nowrap",
 overflow: "hidden",
 textOverflow: "ellipsis",
 }}
->
-{r.email || "—"}
-</div>
-
-{/* Notes (editable, saved to DB) */}
-<input
-className="input"
-value={(r as any).notes ?? ""}
-placeholder="Notes…"
-style={{
-marginTop: 6,
-height: 28,          // shorter height
-padding: "4px 8px",
-fontSize: 12,
-width: "150%",       // ~1.5x wider
-maxWidth: "520px",   // safety cap so it doesn't go insane
-}}
-onChange={(e) => {
-const val = e.target.value;
-const licenseKey = (r.trec_license || "").trim();
-
-// update UI immediately
-setRosterRows((prev) =>
-prev.map((x) =>
-(x.trec_license || "").trim() === licenseKey
-? ({ ...x, notes: val } as any) : x
-)
-);
-
-// save to DB
-updateRosterNote(selectedSessionId, licenseKey, val).catch(() => {
-// keep quiet to avoid noise
-});
-}}
-/>
-
-</div>
-{/* TREC */}
+	>
+	{r.email || "—"}
+	</div>
+	</div>
+	{/* TREC */}
 <div
 title={r.trec_license}
 style={{
@@ -1340,15 +1360,15 @@ fontWeight: 700,
 </div>
 <div style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
 <strong>No-Show:</strong> {noShowAt || "—"}
-</div>
-</div>
+	</div>
+	</div>
 
-{/* Actions */}
-<div style={{ display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
+	{/* Actions */}
+		<div style={{ display: "flex", justifyContent: "flex-end", gap: 6, flexWrap: "wrap" }}>
 <button
 type="button"
-className="btnOutline"
-style={{ padding: "6px 10px" }}
+	className="btnOutline btnMini"
+	style={{ padding: "4px 8px" }}
 onClick={() => {
 const ts = new Date().toLocaleString();
 setRosterActionsByTrec((prev) => ({
@@ -1363,8 +1383,8 @@ Check In
 
 <button
 type="button"
-className="btnOutline"
-style={{ padding: "6px 10px" }}
+	className="btnOutline btnMini"
+	style={{ padding: "4px 8px" }}
 onClick={() => {
 const ts = new Date().toLocaleString();
 setRosterActionsByTrec((prev) => ({
@@ -1379,7 +1399,7 @@ Check Out
 
 <button
 type="button"
-className="tabBtn small"
+	className="tabBtn small btnMini"
 style={{
 padding: "6px 12px",
 borderRadius: 999,
@@ -1419,7 +1439,7 @@ No-Show
 
 <button
 type="button"
-className="btnOutline"
+	className="btnOutline btnMiniIcon"
 title="Undo / Clear Status"
 style={{ width: 34, height: 34, padding: 0 }}
 onClick={() => {
@@ -1435,7 +1455,7 @@ setStatusMsg(`↺ Cleared: ${fullName}`);
 
 <button
 type="button"
-className="btnOutline"
+	className="btnOutline btnMiniIcon"
 title="Remove from roster"
 style={{ width: 34, height: 34, padding: 0 }}
 onClick={() => {
@@ -1450,17 +1470,46 @@ setStatusMsg(`🗑 Removed: ${fullName}`);
 }}
 >
 🗑
-</button>
-</div>
-</div>
-);
-})}
-</div>
-) : null}
+	</button>
+	</div>
 
-{statusMsg ? <div className="status">{statusMsg}</div> : null}
-</>
-)}
+	{/* Notes (editable, saved to DB) */}
+	<input
+		className="input adminNoteInput"
+	value={(r as any).notes ?? ""}
+	placeholder="Notes…"
+		style={{ height: 30, padding: "4px 7px", fontSize: 12 }}
+	onChange={(e) => {
+	const val = e.target.value;
+	const licenseKey = (r.trec_license || "").trim();
+	setRosterRows((prev) =>
+	prev.map((x) =>
+	(x.trec_license || "").trim() === licenseKey ? ({ ...x, notes: val } as any) : x
+	)
+	);
+	updateRosterNote(selectedSessionId, licenseKey, val).catch(() => {});
+	}}
+	/>
+	</div>
+	);
+	})}
+	</div>
+	</div>
+	) : null}
+
+	{adminViewTab === "signIn" ? (
+	<div className="noteBox" style={{ marginTop: 14 }}>
+	Use this view during live attendance for rapid QR + row actions. Roster and actions remain active below.
+	</div>
+	) : null}
+
+	{statusMsg ? <div className="status">{statusMsg}</div> : null}
+	</div>
+	</div>
+	);
+	})()}
+	</>
+	)}
 </>
 )}
 

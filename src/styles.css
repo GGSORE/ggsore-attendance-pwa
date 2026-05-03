@@ -142,6 +142,10 @@ body {
   padding: 6px 12px;
   font-size: 13px;
 }
+.adminTabRow .tabBtn {
+  max-width: 180px;
+  flex: 0 1 auto;
+}
 
 /* ========== GRIDS ========== */
 .grid1 { display: grid; gap: 12px; }
@@ -241,7 +245,8 @@ body {
   margin-top: 10px;
   border-radius: 8px;
   overflow: hidden;
-  border: 1px solid #ddd;
+  border: 1px solid #d8ddea;
+  background: #fff;
 }
 
 .tHead, .tRow {
@@ -258,12 +263,16 @@ body {
 
 
 .tHead {
-  background: #f4f4f4;
+  background: #f1f3f9;
   font-weight: bold;
+  color: #11214b;
 }
 
 .tRow:nth-child(even) {
-  background: #fafafa;
+  background: #fcfcff;
+}
+.tRow {
+  border-top: 1px solid #eef1f6;
 }
 
 .tEmpty {
@@ -279,4 +288,158 @@ body {
   text-align: center;
   font-size: 13px;
   color: #777;
+}
+
+/* ========== ADMIN DASHBOARD ========== */
+.adminDashboard {
+  margin-top: 10px;
+}
+.adminHeaderCard {
+  display: grid;
+  grid-template-columns: 1.5fr 1fr;
+  gap: 22px;
+  background: #eceff4;
+  border: 1px solid #dde2eb;
+  border-radius: 16px;
+  padding: 20px 22px;
+}
+.adminHeaderLeft {
+  min-width: 0;
+}
+.adminCourse {
+  font-size: 14px;
+  font-weight: 700;
+  color: #1a2a5f;
+}
+.adminSessionTitle {
+  font-size: 26px;
+  font-weight: 800;
+  color: #12086f;
+  margin: 4px 0 10px;
+}
+.adminMeta {
+  font-size: 13px;
+  color: #334;
+  margin-top: 4px;
+}
+.adminHeaderRight {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.qrBlock {
+  background: #fff;
+  border: 1px solid #d7dded;
+  border-radius: 10px;
+  padding: 10px;
+}
+.qrLabel {
+  font-size: 12px;
+  font-weight: 700;
+  color: #0f1f52;
+  margin-bottom: 8px;
+}
+.qrCodeBox {
+  min-height: 124px;
+  border: 2px dashed #b9c3df;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+  font-size: 12px;
+  text-align: center;
+  color: #1f2d63;
+  background: #fafbff;
+  word-break: break-all;
+}
+.adminContent {
+  margin-top: 16px;
+  background: #fff;
+  border: 1px solid #edf0f7;
+  border-radius: 14px;
+  padding: 18px;
+}
+.adminCountLine {
+  font-size: 13px;
+  color: #53607f;
+  margin-bottom: 12px;
+}
+.adminUtilityPanel {
+  border: 1px solid #e6ebf5;
+  border-radius: 10px;
+  background: #fafbff;
+  margin-bottom: 16px;
+}
+.adminUtilityPanel > summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 10px 12px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #1d2b5d;
+}
+.adminUtilityPanel > summary::-webkit-details-marker {
+  display: none;
+}
+.adminUtilityPanel > summary::after {
+  content: "▾";
+  float: right;
+  opacity: 0.65;
+}
+.adminUtilityBody {
+  border-top: 1px solid #e8edf7;
+  padding: 8px 12px 12px;
+}
+.adminRosterTitle {
+  margin-top: 0;
+  margin-bottom: 2px;
+  color: #192959;
+}
+.tableWrap {
+  overflow-x: auto;
+  width: 100%;
+}
+.adminTable {
+  min-width: 980px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+}
+.adminTable .tHead {
+  border-bottom: 1px solid #e8edf7;
+  border-radius: 0 !important;
+  background: transparent !important;
+}
+.adminTable .tRow {
+  background: transparent !important;
+}
+.btnMini {
+  font-size: 12px;
+  line-height: 1;
+  border-radius: 999px;
+  border-width: 1px;
+}
+.btnMiniIcon {
+  width: 28px !important;
+  height: 28px !important;
+  min-width: 28px;
+  border-radius: 999px;
+  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.adminNoteInput {
+  font-size: 12px;
+  opacity: 0.95;
+}
+
+@media (max-width: 900px) {
+  .adminHeaderCard {
+    grid-template-columns: 1fr;
+  }
+  .adminContent {
+    padding: 14px;
+  }
 }
